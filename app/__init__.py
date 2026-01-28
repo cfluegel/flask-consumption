@@ -3,6 +3,7 @@ from flask import Flask
 from .extensions import db, migrate, login_manager, csrf
 from .main import main_bp
 from .api import api_bp
+from .api_v1 import api_v1_bp
 
 def create_app(config_object='config.Config'):
     app = Flask(__name__)
@@ -20,6 +21,8 @@ def create_app(config_object='config.Config'):
     app.register_blueprint(main_bp)
     app.register_blueprint(api_bp, url_prefix='/api')
     csrf.exempt(api_bp)  # API uses API key auth instead of CSRF
+    app.register_blueprint(api_v1_bp, url_prefix='/api/v1')
+    csrf.exempt(api_v1_bp)
 
     # Custom Jinja2 filters
     @app.template_filter('de_number')
@@ -134,10 +137,10 @@ def register_commands(app):
 
             readings = MeterReading.query.filter_by(meter_id=meter.id).order_by(MeterReading.reading_date.asc()).all()
             click.echo(f"\nAblesungen ({len(readings)} gesamt):")
-            click.echo(f"{'Datum':<12} {'Wert':<15} {'Seriennummer'}")
-            click.echo('-' * 45)
+            click.echo(f"{'Datum':<12} {'Wert':<15}")
+            click.echo('-' * 30)
             for r in readings:
-                click.echo(f"{r.reading_date}   {r.value:<15.2f} {r.serial_number}")
+                click.echo(f"{r.reading_date}   {r.value:<15.2f}")
 
             click.echo(f"\nMonatlicher Verbrauch:")
             consumption = meter.get_monthly_consumption()

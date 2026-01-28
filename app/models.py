@@ -34,8 +34,12 @@ class Meter(db.Model):
     def get_last_reading(self) -> 'MeterReading | None':
         return self.readings.first()
 
-    def get_monthly_consumption(self, months: int = 12) -> list[tuple[str, float | None]]:
-        """Returns list of (month_label, consumption) for last N months.
+    def get_monthly_consumption(self, months: int | None = None, newest_first: bool = True) -> list[tuple[str, float | None]]:
+        """Returns list of (month_label, consumption).
+
+        Args:
+            months: Number of months to return. If None, returns all months from first reading.
+            newest_first: If True, returns newest month first. If False, oldest first (for charts).
 
         Uses pro-rata distribution: consumption between readings is spread
         across months proportionally based on days in each month.
@@ -46,12 +50,15 @@ class Meter(db.Model):
         # Use direct query to override relationship's default desc ordering
         readings = MeterReading.query.filter_by(meter_id=self.id).order_by(MeterReading.reading_date.asc()).all()
 
+        if not readings:
+            return []
+
         # Accumulate consumption per month using pro-rata distribution
         consumption_by_month: dict[tuple[int, int], float] = {}
 
         prev_reading = None
         for reading in readings:
-            if prev_reading and reading.serial_number == prev_reading.serial_number:
+            if prev_reading:
                 total_consumption = reading.value - prev_reading.value
                 total_days = (reading.reading_date - prev_reading.reading_date).days
 
@@ -75,15 +82,39 @@ class Meter(db.Model):
 
             prev_reading = reading
 
-        # Generate last N months
+        # Determine date range
         today = date.today()
+        if months is None:
+            # Start from the month of the first reading
+            first_reading_date = readings[0].reading_date
+            start_date = date(first_reading_date.year, first_reading_date.month, 1)
+            total_months = (today.year - start_date.year) * 12 + (today.month - start_date.month) + 1
+        else:
+            total_months = months
+
+        # Generate months
         result = []
-        for i in range(months - 1, -1, -1):
-            month_date = today - relativedelta(months=i)
-            month_key = (month_date.year, month_date.month)
-            month_label = f"{month_names[month_date.month - 1]} {month_date.year}"
-            consumption = consumption_by_month.get(month_key)
-            result.append((month_label, consumption))
+        if newest_first:
+            # Newest to oldest (for tables)
+            started = False
+            for i in range(total_months):
+                month_date = today - relativedelta(months=i)
+                month_key = (month_date.year, month_date.month)
+                month_label = f"{month_names[month_date.month - 1]} {month_date.year}"
+                consumption = consumption_by_month.get(month_key)
+                # Skip leading months with no data
+                if not started and consumption is None:
+                    continue
+                started = True
+                result.append((month_label, consumption))
+        else:
+            # Oldest to newest (for charts)
+            for i in range(total_months - 1, -1, -1):
+                month_date = today - relativedelta(months=i)
+                month_key = (month_date.year, month_date.month)
+                month_label = f"{month_names[month_date.month - 1]} {month_date.year}"
+                consumption = consumption_by_month.get(month_key)
+                result.append((month_label, consumption))
 
         return result
 
@@ -93,7 +124,6 @@ class MeterReading(db.Model):
     meter_id = db.Column(db.Integer, db.ForeignKey('meter.id'), nullable=False)
     reading_date = db.Column(db.Date, nullable=False)
     value = db.Column(db.Float, nullable=False)
-    serial_number = db.Column(db.String(100), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     __table_args__ = (

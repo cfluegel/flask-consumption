@@ -12,16 +12,17 @@
     }
     .chart-wrapper {
       flex: 1;
+      background: var(--sand-medium);
+      padding: 1rem;
+      border-radius: 8px;
     }
     .chart-wrapper h3 {
-      margin-bottom: 0.5rem;
+      margin: 0 0 0.5rem 0;
+      color: var(--text-primary);
     }
-    .charts-css {
+    .chart-canvas-container {
       height: 250px;
-      max-width: 100%;
-    }
-    .charts-css.line {
-      --color: #1d4ed8;
+      position: relative;
     }
   </style>
 
@@ -29,40 +30,107 @@
     <div class="charts-container">
       {% for meter in meters %}
         {% set data = consumption_data[meter.id] %}
-        {% set values = data | map(attribute=1) | select('number') | list %}
-        {% set max_val = values | max if values else 1 %}
         <div class="chart-wrapper">
           <h3>{{ meter.name }} ({{ meter.unit }})</h3>
-          <table class="charts-css line show-labels show-primary-axis show-4-secondary-axes">
-            <thead>
-              <tr>
-                <th scope="col">Monat</th>
-                <th scope="col">Verbrauch</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% set prev_size = namespace(value=0) %}
-              {% for month, value in data %}
-                {% if value is not none and max_val > 0 %}
-                  {% set current_size = value / max_val %}
-                {% else %}
-                  {% set current_size = 0 %}
-                {% endif %}
-                <tr>
-                  <th scope="row">{{ month.split()[0] }}</th>
-                  <td style="--start: {{ prev_size.value }}; --size: {{ current_size }};">
-                    {% if value is not none %}
-                      <span class="data">{{ value|de_number(0) }}</span>
-                    {% endif %}
-                  </td>
-                </tr>
-                {% set prev_size.value = current_size %}
-              {% endfor %}
-            </tbody>
-          </table>
+          <div class="chart-canvas-container">
+            <canvas id="chart-{{ meter.id }}"></canvas>
+          </div>
         </div>
       {% endfor %}
     </div>
+
+    <script>
+      const chartColors = {
+        line: '#b8860b',
+        fill: 'rgba(184, 134, 11, 0.2)',
+        grid: '#d4a574',
+        text: '#5c4033'
+      };
+
+      {% for meter in meters %}
+        {% set data = consumption_data[meter.id] %}
+        {% set labels = data | map(attribute=0) | list %}
+        {% set values = data | map(attribute=1) | list %}
+
+        (function() {
+          const ctx = document.getElementById('chart-{{ meter.id }}').getContext('2d');
+          const rawValues = {{ values | tojson }};
+          const values = rawValues.map(v => v === null ? null : v);
+          const numericValues = values.filter(v => v !== null);
+          const minVal = numericValues.length > 0 ? Math.min(...numericValues) : 0;
+          const maxVal = numericValues.length > 0 ? Math.max(...numericValues) : 100;
+          const padding = (maxVal - minVal) * 0.1 || 10;
+
+          new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: {{ labels | tojson }},
+              datasets: [{
+                label: '{{ meter.name }}',
+                data: values,
+                borderColor: chartColors.line,
+                backgroundColor: chartColors.fill,
+                fill: true,
+                tension: 0.3,
+                spanGaps: true,
+                pointBackgroundColor: chartColors.line,
+                pointRadius: 4
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  display: false
+                },
+                tooltip: {
+                  callbacks: {
+                    label: function(context) {
+                      if (context.raw === null) return 'Keine Daten';
+                      return context.raw.toLocaleString('de-DE') + ' {{ meter.unit }}';
+                    }
+                  }
+                }
+              },
+              scales: {
+                x: {
+                  ticks: {
+                    color: chartColors.text,
+                    maxRotation: 45,
+                    minRotation: 45
+                  },
+                  grid: {
+                    color: chartColors.grid,
+                    drawBorder: false
+                  }
+                },
+                y: {
+                  position: 'left',
+                  min: Math.max(0, minVal - padding),
+                  max: maxVal + padding,
+                  ticks: {
+                    color: chartColors.text,
+                    callback: function(value) {
+                      return value.toLocaleString('de-DE');
+                    }
+                  },
+                  grid: {
+                    color: chartColors.grid,
+                    drawBorder: false
+                  },
+                  title: {
+                    display: true,
+                    text: '{{ meter.unit }}',
+                    color: chartColors.text
+                  }
+                }
+              }
+            }
+          });
+        })();
+      {% endfor %}
+    </script>
   {% else %}
     <p>Keine Zähler vorhanden.</p>
   {% endif %}

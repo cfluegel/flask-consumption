@@ -19,7 +19,7 @@ def index():
 @main_bp.route('/graphs')
 def graphs():
     meters = Meter.query.all()
-    consumption_data = {m.id: m.get_monthly_consumption() for m in meters}
+    consumption_data = {m.id: m.get_monthly_consumption(months=12, newest_first=False) for m in meters}
     return render_template('graphs.html', meters=meters, consumption_data=consumption_data)
 
 
@@ -43,12 +43,10 @@ def reading_new():
             form.meter_id.data = meter_id
 
     if form.validate_on_submit():
-        meter = Meter.query.get(form.meter_id.data)
         reading = MeterReading(
             meter_id=form.meter_id.data,
             reading_date=form.reading_date.data,
-            value=form.value.data,
-            serial_number=meter.serial_number  # Auto-populate from meter
+            value=form.value.data
         )
         db.session.add(reading)
         db.session.commit()
@@ -68,7 +66,6 @@ def reading_edit(reading_id):
         reading.meter_id = form.meter_id.data
         reading.reading_date = form.reading_date.data
         reading.value = form.value.data
-        # Keep existing serial_number - don't update it
         db.session.commit()
         flash('Ablesung erfolgreich aktualisiert.', 'success')
         return redirect(url_for('main.meter_detail', meter_id=reading.meter_id))

@@ -39,8 +39,7 @@ def get_readings(meter_id):
         'readings': [{
             'id': r.id,
             'reading_date': r.reading_date.isoformat(),
-            'value': r.value,
-            'serial_number': r.serial_number
+            'value': r.value
         } for r in readings]
     })
 
@@ -67,26 +66,18 @@ def create_reading():
     except ValueError:
         return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
 
-    serial_number = data.get('serial_number', meter.serial_number)
-
     reading = MeterReading(
         meter_id=data['meter_id'],
         reading_date=reading_date,
-        value=float(data['value']),
-        serial_number=serial_number
+        value=float(data['value'])
     )
 
     db.session.add(reading)
-
-    if serial_number != meter.serial_number:
-        meter.serial_number = serial_number
-
     db.session.commit()
 
     return jsonify({
         'id': reading.id,
         'meter_id': reading.meter_id,
         'reading_date': reading.reading_date.isoformat(),
-        'value': reading.value,
-        'serial_number': reading.serial_number
+        'value': reading.value
     }), 201

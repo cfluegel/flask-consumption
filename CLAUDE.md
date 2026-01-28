@@ -80,7 +80,7 @@ app/
 ### Models (`app/models.py`)
 - `User` - Authentication model with password hashing
 - `Meter` - Utility meter (name, unit, serial_number)
-- `MeterReading` - Meter reading (meter_id, reading_date, value, serial_number)
+- `MeterReading` - Meter reading (meter_id, reading_date, value)
 
 ### API Endpoints
 - `GET /api/status` - Health check (no auth)
@@ -95,10 +95,9 @@ All API endpoints (except /status) require `X-API-Key` header.
 - SQLAlchemy ORM (SQLite default, PostgreSQL planned via `DATABASE_URL`)
 - Flask-Login for authentication
 - Flask-WTF for forms with CSRF protection
-- Charts.css for data visualization (planned)
+- Chart.js for data visualization
 - HTMX for dynamic UI (planned)
 
 ## Design Specifications
-- Light theme: `#FFE6A2` base color
-- Dark theme: `#1432b8` base color
+- Sand-colored theme with CSS variables (--sand-light, --sand-medium, --sand-dark, --sand-accent)
 - German language UI
