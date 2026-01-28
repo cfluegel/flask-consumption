@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <h1>Verbrauchsdiagramme</h1>
+  <p>Monatlicher Verbrauch der letzten 12 Monate</p>
+
+  <style>
+    .charts-container {
+      display: flex;
+      gap: 2rem;
+      margin-top: 2rem;
+    }
+    .chart-wrapper {
+      flex: 1;
+    }
+    .chart-wrapper h3 {
+      margin-bottom: 0.5rem;
+    }
+    .charts-css {
+      height: 250px;
+      max-width: 100%;
+    }
+    .charts-css.line {
+      --color: #1d4ed8;
+    }
+  </style>
+
+  {% if meters %}
+    <div class="charts-container">
+      {% for meter in meters %}
+        {% set data = consumption_data[meter.id] %}
+        {% set values = data | map(attribute=1) | select('number') | list %}
+        {% set max_val = values | max if values else 1 %}
+        <div class="chart-wrapper">
+          <h3>{{ meter.name }} ({{ meter.unit }})</h3>
+          <table class="charts-css line show-labels show-primary-axis show-4-secondary-axes">
+            <thead>
+              <tr>
+                <th scope="col">Monat</th>
+                <th scope="col">Verbrauch</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% set prev_size = namespace(value=0) %}
+              {% for month, value in data %}
+                {% if value is not none and max_val > 0 %}
+                  {% set current_size = value / max_val %}
+                {% else %}
+                  {% set current_size = 0 %}
+                {% endif %}
+                <tr>
+                  <th scope="row">{{ month.split()[0] }}</th>
+                  <td style="--start: {{ prev_size.value }}; --size: {{ current_size }};">
+                    {% if value is not none %}
+                      <span class="data">{{ value|de_number(0) }}</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% set prev_size.value = current_size %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p>Keine Zähler vorhanden.</p>
+  {% endif %}
+{% endblock %}

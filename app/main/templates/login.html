@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <h1>Anmeldung</h1>
+  <form method="post">
+    {{ form.hidden_tag() }}
+    <label for="username">{{ form.username.label }}</label>
+    {{ form.username(id='username') }}
+
+    <label for="password">{{ form.password.label }}</label>
+    {{ form.password(id='password') }}
+
+    {{ form.submit() }}
+  </form>
+{% endblock %}

@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <h1>Verbrauchstracker</h1>
+
+  {% if meters %}
+    <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+      <thead>
+        <tr style="border-bottom: 2px solid #ddd; text-align: left;">
+          <th style="padding: 0.5rem;">Zähler</th>
+          <th style="padding: 0.5rem;">Einheit</th>
+          <th style="padding: 0.5rem;">Letzte Ablesung</th>
+          <th style="padding: 0.5rem;">Letzter Stand</th>
+          <th style="padding: 0.5rem;">Aktionen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for meter in meters %}
+          {% set last_reading = meter.get_last_reading() %}
+          <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 0.5rem;">
+              <a href="{{ url_for('main.meter_detail', meter_id=meter.id) }}">{{ meter.name }}</a>
+            </td>
+            <td style="padding: 0.5rem;">{{ meter.unit }}</td>
+            <td style="padding: 0.5rem;">
+              {% if last_reading %}
+                {{ last_reading.reading_date.strftime('%d.%m.%Y') }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td style="padding: 0.5rem;">
+              {% if last_reading %}
+                {{ last_reading.value|de_number }} {{ meter.unit }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td style="padding: 0.5rem;">
+              <a href="{{ url_for('main.reading_new', meter_id=meter.id) }}">Neue Ablesung</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <h2 style="margin-top: 2rem;">Monatlicher Verbrauch (letzte 12 Monate)</h2>
+    <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+      {% for meter in meters %}
+        <div style="flex: 1;">
+          <h3>{{ meter.name }}</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="border-bottom: 2px solid #ddd; text-align: left;">
+                <th style="padding: 0.25rem 0.5rem;">Monat</th>
+                <th style="padding: 0.25rem 0.5rem; text-align: right;">Verbrauch</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for month, value in consumption_data[meter.id] %}
+                <tr style="border-bottom: 1px solid #eee;">
+                  <td style="padding: 0.25rem 0.5rem;">{{ month }}</td>
+                  <td style="padding: 0.25rem 0.5rem; text-align: right;">
+                    {% if value is not none %}
+                      {{ value|de_number }} {{ meter.unit }}
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p>Keine Zähler vorhanden. Bitte zuerst Zähler anlegen.</p>
+  {% endif %}
+{% endblock %}
