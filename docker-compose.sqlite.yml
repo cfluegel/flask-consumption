@@ -1,0 +1,17 @@
+services:
+  app:
+    image: cfluegel/flask-consumption:latest
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_CONFIG=config.ProductionConfig
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - API_KEY=${API_KEY:-change-me-in-production}
+      - DATABASE_URL=sqlite:////data/app.db
+    volumes:
+      - app-data:/data
+    restart: unless-stopped
+
+volumes:
+  app-data:

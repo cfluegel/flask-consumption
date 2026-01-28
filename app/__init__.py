@@ -149,3 +149,132 @@ def register_commands(app):
                     click.echo(f"  {month}: {value:.2f} {meter.unit}")
                 else:
                     click.echo(f"  {month}: -")
+
+    @app.cli.command('export-data')
+    @click.argument('filename', type=click.Path())
+    def export_data(filename):
+        """Exportiert alle Zähler und Ablesungen in eine JSON-Datei."""
+        import json
+        from datetime import datetime
+        from .models import Meter, MeterReading
+
+        meters = Meter.query.all()
+        readings = MeterReading.query.order_by(MeterReading.meter_id, MeterReading.reading_date).all()
+
+        data = {
+            'exported_at': datetime.utcnow().isoformat(),
+            'meters': [
+                {
+                    'id': m.id,
+                    'name': m.name,
+                    'unit': m.unit,
+                    'serial_number': m.serial_number
+                }
+                for m in meters
+            ],
+            'readings': [
+                {
+                    'meter_id': r.meter_id,
+                    'reading_date': r.reading_date.isoformat(),
+                    'value': r.value
+                }
+                for r in readings
+            ]
+        }
+
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+        click.echo(f"Exportiert: {len(meters)} Zähler, {len(readings)} Ablesungen")
+        click.echo(f"Datei: {filename}")
+
+    @app.cli.command('import-data')
+    @click.argument('filename', type=click.Path(exists=True))
+    @click.option('--replace', is_flag=True, help='Alle bestehenden Daten löschen vor dem Import')
+    def import_data(filename, replace):
+        """Importiert Zähler und Ablesungen aus einer JSON-Datei."""
+        import json
+        from datetime import datetime
+        from .models import Meter, MeterReading
+
+        with open(filename, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        if 'meters' not in data or 'readings' not in data:
+            click.echo('Fehler: Ungültiges Dateiformat. Erwartet: meters und readings.')
+            return
+
+        if replace:
+            # Confirm destructive operation
+            reading_count = MeterReading.query.count()
+            meter_count = Meter.query.count()
+            click.echo(f"WARNUNG: Dies löscht {meter_count} Zähler und {reading_count} Ablesungen!")
+            if not click.confirm('Wirklich alle Daten ersetzen?'):
+                click.echo('Abgebrochen.')
+                return
+
+            # Delete all existing data (readings first due to foreign key)
+            MeterReading.query.delete()
+            Meter.query.delete()
+            db.session.commit()
+            click.echo('Bestehende Daten gelöscht.')
+
+        # Build meter ID mapping (old ID -> new meter)
+        meter_id_map = {}
+        meters_created = 0
+        meters_skipped = 0
+
+        for meter_data in data['meters']:
+            existing = Meter.query.filter_by(name=meter_data['name']).first()
+            if existing:
+                meter_id_map[meter_data['id']] = existing.id
+                meters_skipped += 1
+            else:
+                meter = Meter(
+                    name=meter_data['name'],
+                    unit=meter_data['unit'],
+                    serial_number=meter_data['serial_number']
+                )
+                db.session.add(meter)
+                db.session.flush()  # Get the new ID
+                meter_id_map[meter_data['id']] = meter.id
+                meters_created += 1
+
+        db.session.commit()
+
+        # Import readings
+        readings_created = 0
+        readings_skipped = 0
+
+        for reading_data in data['readings']:
+            old_meter_id = reading_data['meter_id']
+            if old_meter_id not in meter_id_map:
+                click.echo(f"Warnung: Zähler-ID {old_meter_id} nicht gefunden, überspringe Ablesung.")
+                readings_skipped += 1
+                continue
+
+            new_meter_id = meter_id_map[old_meter_id]
+            reading_date = datetime.fromisoformat(reading_data['reading_date']).date()
+
+            # Check for duplicate (same meter and date)
+            existing = MeterReading.query.filter_by(
+                meter_id=new_meter_id,
+                reading_date=reading_date
+            ).first()
+
+            if existing:
+                readings_skipped += 1
+            else:
+                reading = MeterReading(
+                    meter_id=new_meter_id,
+                    reading_date=reading_date,
+                    value=reading_data['value']
+                )
+                db.session.add(reading)
+                readings_created += 1
+
+        db.session.commit()
+
+        click.echo(f"\nImport abgeschlossen:")
+        click.echo(f"  Zähler:     {meters_created} erstellt, {meters_skipped} übersprungen")
+        click.echo(f"  Ablesungen: {readings_created} erstellt, {readings_skipped} übersprungen")
