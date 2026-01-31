@@ -15,6 +15,14 @@
       background: var(--sand-medium);
       padding: 1rem;
       border-radius: 8px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      text-decoration: none;
+      display: block;
+    }
+    .chart-wrapper:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
     .chart-wrapper h3 {
       margin: 0 0 0.5rem 0;
@@ -30,12 +38,12 @@
     <div class="charts-container">
       {% for meter in meters %}
         {% set data = consumption_data[meter.id] %}
-        <div class="chart-wrapper">
+        <a href="{{ url_for('main.graph_detail', meter_id=meter.id) }}" class="chart-wrapper">
           <h3>{{ meter.name }} ({{ meter.unit }})</h3>
           <div class="chart-canvas-container">
             <canvas id="chart-{{ meter.id }}"></canvas>
           </div>
-        </div>
+        </a>
       {% endfor %}
     </div>
 

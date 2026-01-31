@@ -13,7 +13,12 @@ from ..models import Meter, MeterReading, User
 def index():
     meters = Meter.query.all()
     consumption_data = {m.id: m.get_monthly_consumption() for m in meters}
-    return render_template('index.html', meters=meters, consumption_data=consumption_data)
+    avg_3month = {m.id: m.get_3month_average() for m in meters}
+    pred_weighted = {m.id: m.get_prediction_weighted() for m in meters}
+    pred_seasonal = {m.id: m.get_prediction_seasonal() for m in meters}
+    return render_template('index.html', meters=meters, consumption_data=consumption_data,
+                           avg_3month=avg_3month, pred_weighted=pred_weighted,
+                           pred_seasonal=pred_seasonal)
 
 
 @main_bp.route('/graphs')
@@ -21,6 +26,13 @@ def graphs():
     meters = Meter.query.all()
     consumption_data = {m.id: m.get_monthly_consumption(months=12, newest_first=False) for m in meters}
     return render_template('graphs.html', meters=meters, consumption_data=consumption_data)
+
+
+@main_bp.route('/graph/<int:meter_id>')
+def graph_detail(meter_id):
+    meter = Meter.query.get_or_404(meter_id)
+    consumption_data = meter.get_monthly_consumption(months=None, newest_first=False)
+    return render_template('graph_detail.html', meter=meter, consumption_data=consumption_data)
 
 
 @main_bp.route('/meter/<int:meter_id>')

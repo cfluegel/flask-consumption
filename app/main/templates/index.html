@@ -11,6 +11,9 @@
           <th style="padding: 0.5rem;">Einheit</th>
           <th style="padding: 0.5rem;">Letzte Ablesung</th>
           <th style="padding: 0.5rem;">Letzter Stand</th>
+          <th style="padding: 0.5rem;">3-Monats-Ø</th>
+          <th style="padding: 0.5rem;">Prognose (Trend)</th>
+          <th style="padding: 0.5rem;">Prognose (Saison)</th>
           <th style="padding: 0.5rem;">Aktionen</th>
         </tr>
       </thead>
@@ -32,6 +35,27 @@
             <td style="padding: 0.5rem;">
               {% if last_reading %}
                 {{ last_reading.value|de_number }} {{ meter.unit }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td style="padding: 0.5rem;">
+              {% if avg_3month[meter.id] is not none %}
+                {{ avg_3month[meter.id]|de_number }} {{ meter.unit }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td style="padding: 0.5rem;">
+              {% if pred_weighted[meter.id] is not none %}
+                {{ pred_weighted[meter.id]|de_number }} {{ meter.unit }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td style="padding: 0.5rem;">
+              {% if pred_seasonal[meter.id] is not none %}
+                {{ pred_seasonal[meter.id]|de_number }} {{ meter.unit }}
               {% else %}
                 -
               {% endif %}

@@ -1,0 +1,134 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <style>
+    .graph-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    .graph-header h1 {
+      margin: 0;
+    }
+    .back-link {
+      color: var(--sand-accent);
+      text-decoration: none;
+    }
+    .back-link:hover {
+      text-decoration: underline;
+    }
+    .full-chart-container {
+      background: var(--sand-medium);
+      padding: 1.5rem;
+      border-radius: 8px;
+      height: calc(100vh - 200px);
+      min-height: 400px;
+    }
+    .chart-canvas-wrapper {
+      height: 100%;
+      position: relative;
+    }
+  </style>
+
+  <div class="graph-header">
+    <h1>{{ meter.name }} - Verbrauch</h1>
+    <a href="{{ url_for('main.graphs') }}" class="back-link">&larr; Zurück zu Diagramme</a>
+  </div>
+
+  {% if consumption_data %}
+    <div class="full-chart-container">
+      <div class="chart-canvas-wrapper">
+        <canvas id="full-chart"></canvas>
+      </div>
+    </div>
+
+    <script>
+      const chartColors = {
+        line: '#b8860b',
+        fill: 'rgba(184, 134, 11, 0.2)',
+        grid: '#d4a574',
+        text: '#5c4033'
+      };
+
+      const labels = {{ consumption_data | map(attribute=0) | list | tojson }};
+      const rawValues = {{ consumption_data | map(attribute=1) | list | tojson }};
+      const values = rawValues.map(v => v === null ? null : v);
+      const numericValues = values.filter(v => v !== null);
+      const minVal = numericValues.length > 0 ? Math.min(...numericValues) : 0;
+      const maxVal = numericValues.length > 0 ? Math.max(...numericValues) : 100;
+      const padding = (maxVal - minVal) * 0.1 || 10;
+
+      const ctx = document.getElementById('full-chart').getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: '{{ meter.name }}',
+            data: values,
+            borderColor: chartColors.line,
+            backgroundColor: chartColors.fill,
+            fill: true,
+            tension: 0.3,
+            spanGaps: true,
+            pointBackgroundColor: chartColors.line,
+            pointRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  if (context.raw === null) return 'Keine Daten';
+                  return context.raw.toLocaleString('de-DE') + ' {{ meter.unit }}';
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: {
+                color: chartColors.text,
+                maxRotation: 45,
+                minRotation: 45
+              },
+              grid: {
+                color: chartColors.grid,
+                drawBorder: false
+              }
+            },
+            y: {
+              position: 'left',
+              min: Math.max(0, minVal - padding),
+              max: maxVal + padding,
+              ticks: {
+                color: chartColors.text,
+                callback: function(value) {
+                  return value.toLocaleString('de-DE');
+                }
+              },
+              grid: {
+                color: chartColors.grid,
+                drawBorder: false
+              },
+              title: {
+                display: true,
+                text: '{{ meter.unit }}',
+                color: chartColors.text
+              }
+            }
+          }
+        }
+      });
+    </script>
+  {% else %}
+    <p>Keine Verbrauchsdaten vorhanden.</p>
+  {% endif %}
+{% endblock %}

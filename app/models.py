@@ -118,6 +118,134 @@ class Meter(db.Model):
 
         return result
 
+    def get_3month_average(self) -> float | None:
+        """Returns average consumption of last 3 complete months.
+
+        Returns None if less than 1 month of consumption data available.
+        """
+        consumption = self.get_monthly_consumption(months=4, newest_first=True)
+
+        # Filter out months with no data
+        values = [v for _, v in consumption if v is not None]
+
+        # Skip current (potentially incomplete) month if we have enough data
+        if len(values) > 3:
+            values = values[1:4]  # Skip most recent, take next 3
+        elif len(values) > 1:
+            values = values[:3]  # Take what we have
+
+        if not values:
+            return None
+
+        return sum(values) / len(values)
+
+    def get_prediction_weighted(self) -> float | None:
+        """Returns weighted moving average prediction.
+
+        Uses weights: most recent month * 0.5, second * 0.33, third * 0.17
+        Adapts to changing consumption patterns faster than simple average.
+        Returns None if insufficient data.
+        """
+        consumption = self.get_monthly_consumption(months=4, newest_first=True)
+
+        # Filter out months with no data
+        values = [v for _, v in consumption if v is not None]
+
+        # Skip current (potentially incomplete) month if we have enough data
+        if len(values) > 3:
+            values = values[1:4]
+        elif len(values) > 1:
+            values = values[:3]
+
+        if not values:
+            return None
+
+        # Apply weights based on available data
+        weights = [0.5, 0.33, 0.17]
+        if len(values) == 1:
+            return values[0]
+        elif len(values) == 2:
+            # Normalize weights for 2 values
+            w1, w2 = 0.6, 0.4
+            return values[0] * w1 + values[1] * w2
+        else:
+            return values[0] * weights[0] + values[1] * weights[1] + values[2] * weights[2]
+
+    def get_prediction_seasonal(self) -> float | None:
+        """Returns seasonal prediction based on same month last year.
+
+        Calculates: last_year_same_month * (recent_3mo_avg / last_year_3mo_avg)
+        This captures seasonal patterns (heating in winter, etc.) while
+        accounting for overall consumption changes.
+
+        Falls back to weighted prediction if no yearly data available.
+        """
+        today = date.today()
+        target_month = today.month
+        target_year = today.year - 1
+
+        # Get consumption data going back at least 15 months
+        consumption = self.get_monthly_consumption(months=15, newest_first=True)
+
+        # Build a dict for easy lookup: (year, month) -> value
+        month_names = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun',
+                       'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez']
+        consumption_dict = {}
+        for label, value in consumption:
+            if value is not None:
+                # Parse "Mär 2024" format
+                parts = label.split()
+                if len(parts) == 2:
+                    month_idx = month_names.index(parts[0]) + 1 if parts[0] in month_names else None
+                    year = int(parts[1])
+                    if month_idx:
+                        consumption_dict[(year, month_idx)] = value
+
+        # Get same month last year
+        last_year_value = consumption_dict.get((target_year, target_month))
+
+        if last_year_value is None:
+            # Fall back to weighted prediction
+            return self.get_prediction_weighted()
+
+        # Calculate recent 3-month average (excluding current month)
+        recent_values = []
+        for i in range(1, 4):
+            m = today.month - i
+            y = today.year
+            if m <= 0:
+                m += 12
+                y -= 1
+            val = consumption_dict.get((y, m))
+            if val is not None:
+                recent_values.append(val)
+
+        # Calculate last year's 3-month average (same period)
+        last_year_values = []
+        for i in range(1, 4):
+            m = today.month - i
+            y = today.year - 1
+            if m <= 0:
+                m += 12
+                y -= 1
+            val = consumption_dict.get((y, m))
+            if val is not None:
+                last_year_values.append(val)
+
+        if not recent_values or not last_year_values:
+            # Not enough data for adjustment, use last year value directly
+            return last_year_value
+
+        recent_avg = sum(recent_values) / len(recent_values)
+        last_year_avg = sum(last_year_values) / len(last_year_values)
+
+        if last_year_avg == 0:
+            return last_year_value
+
+        # Apply adjustment factor
+        adjustment = recent_avg / last_year_avg
+        return last_year_value * adjustment
+
 
 class MeterReading(db.Model):
     id = db.Column(db.Integer, primary_key=True)
