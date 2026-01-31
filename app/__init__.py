@@ -1,5 +1,9 @@
+import json
+from pathlib import Path
+
 import click
 from flask import Flask
+from flasgger import Swagger
 from .extensions import db, migrate, login_manager, csrf
 from .main import main_bp
 from .api import api_bp
@@ -16,6 +20,26 @@ def create_app(config_object='config.Config'):
     login_manager.login_view = 'main.login'
     login_manager.login_message_category = 'info'
     csrf.init_app(app)
+
+    # Load OpenAPI spec and configure Swagger UI
+    openapi_path = Path(__file__).parent / 'api' / 'openapi.json'
+    with open(openapi_path) as f:
+        openapi_spec = json.load(f)
+
+    swagger_config = {
+        'headers': [],
+        'specs': [
+            {
+                'endpoint': 'apispec',
+                'route': '/apispec.json',
+            }
+        ],
+        'static_url_path': '/flasgger_static',
+        'swagger_ui': True,
+        'specs_route': '/apidocs/'
+    }
+
+    Swagger(app, template=openapi_spec, config=swagger_config)
 
     # Blueprints registrieren
     app.register_blueprint(main_bp)

@@ -215,7 +215,7 @@ class TestApiV1LatestReading:
 
             if data['reading']:
                 assert 'id' in data['reading']
-                assert 'date' in data['reading']
+                assert 'reading_date' in data['reading']
                 assert 'value' in data['reading']
 
     def test_get_latest_reading_empty(self, client, api_headers, sample_meters, app):

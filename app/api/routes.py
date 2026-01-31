@@ -1,4 +1,6 @@
+import json
 from datetime import datetime
+from pathlib import Path
 
 from flask import jsonify, request
 
@@ -10,6 +12,15 @@ from ..models import Meter, MeterReading
 @api_bp.route('/status')
 def status():
     return jsonify({'status': 'ok'})
+
+
+@api_bp.route('/openapi.json')
+def openapi_spec():
+    """Serve OpenAPI 3.0 specification for API documentation."""
+    spec_path = Path(__file__).parent / 'openapi.json'
+    with open(spec_path) as f:
+        spec = json.load(f)
+    return jsonify(spec)
 
 
 @api_bp.route('/meters')

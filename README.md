@@ -71,17 +71,27 @@ Environment variables:
 
 ## API Usage
 
-The REST API is available at `/api/v1/`. All endpoints (except `/api/v1/status`) require the `X-API-Key` header.
+Two API versions are available:
+- **Base API** (`/api`) - Core functionality
+- **Extended API** (`/api/v1`) - Additional features like latest reading and pagination
+
+All endpoints (except `/api/status` and `/api/openapi.json`) require the `X-API-Key` header.
 
 ```bash
 # Health check
-curl http://localhost:5000/api/v1/status
+curl http://localhost:5000/api/status
+
+# OpenAPI 3.0 specification
+curl http://localhost:5000/api/openapi.json
 
 # List all meters
 curl -H "X-API-Key: your-api-key" http://localhost:5000/api/v1/meters
 
-# Get readings for a meter
-curl -H "X-API-Key: your-api-key" http://localhost:5000/api/v1/meters/1/readings
+# Get latest reading for a meter (v1 only)
+curl -H "X-API-Key: your-api-key" http://localhost:5000/api/v1/meters/1/latest
+
+# Get readings for a meter (with optional limit in v1)
+curl -H "X-API-Key: your-api-key" http://localhost:5000/api/v1/meters/1/readings?limit=5
 
 # Add a new reading
 curl -X POST \
@@ -122,8 +132,11 @@ flask-consumption/
 │   │   ├── routes.py        # View functions
 │   │   ├── forms.py         # WTForms
 │   │   └── templates/       # Jinja2 templates
-│   └── api/                 # REST API blueprint
-│       └── routes.py        # API endpoints
+│   ├── api/                 # Base REST API blueprint (/api)
+│   │   ├── routes.py        # API endpoints
+│   │   └── openapi.json     # OpenAPI 3.0 specification
+│   └── api_v1/              # Extended REST API blueprint (/api/v1)
+│       └── routes.py        # Additional endpoints (latest, pagination)
 ├── migrations/              # Alembic database migrations
 ├── config.py                # Configuration classes
 ├── run.py                   # Application entry point

@@ -1,0 +1,751 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Consumption Tracker API",
+    "description": "REST API for tracking utility consumption (electricity, natural gas, water). Record meter readings and retrieve consumption data for visualization.\n\n## Authentication\nAll endpoints except `/api/status` require an API key passed in the `X-API-Key` header.\n\n## API Versions\n- `/api/*` - Base API with core functionality\n- `/api/v1/*` - Extended API with additional features like latest reading and pagination",
+    "version": "1.0.0",
+    "contact": {
+      "name": "API Support"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Development server"
+    },
+    {
+      "url": "{protocol}://{host}",
+      "description": "Custom server",
+      "variables": {
+        "protocol": {
+          "enum": ["http", "https"],
+          "default": "https"
+        },
+        "host": {
+          "default": "localhost:5000"
+        }
+      }
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "paths": {
+    "/api/status": {
+      "get": {
+        "summary": "Health check",
+        "description": "Returns the API status. Does not require authentication.",
+        "operationId": "getStatus",
+        "security": [],
+        "tags": ["Health"],
+        "responses": {
+          "200": {
+            "description": "API is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                },
+                "example": {
+                  "status": "ok"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/openapi.json": {
+      "get": {
+        "summary": "OpenAPI specification",
+        "description": "Returns the OpenAPI 3.0 specification for this API. Does not require authentication.",
+        "operationId": "getOpenApiSpec",
+        "security": [],
+        "tags": ["Documentation"],
+        "responses": {
+          "200": {
+            "description": "OpenAPI specification",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/meters": {
+      "get": {
+        "summary": "List all meters",
+        "description": "Returns a list of all utility meters (electricity, gas, water).",
+        "operationId": "listMeters",
+        "tags": ["Meters"],
+        "responses": {
+          "200": {
+            "description": "List of meters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Meter"
+                  }
+                },
+                "example": [
+                  {
+                    "id": 1,
+                    "name": "Strom",
+                    "unit": "kWh",
+                    "serial_number": "E-001"
+                  },
+                  {
+                    "id": 2,
+                    "name": "Gas",
+                    "unit": "m³",
+                    "serial_number": "G-001"
+                  },
+                  {
+                    "id": 3,
+                    "name": "Wasser",
+                    "unit": "Liter",
+                    "serial_number": "W-001"
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/meters/{meterId}/readings": {
+      "get": {
+        "summary": "Get all readings for a meter",
+        "description": "Returns all readings for a specific meter, ordered by date (newest first).",
+        "operationId": "getMeterReadings",
+        "tags": ["Readings"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MeterId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Meter with its readings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeterWithReadings"
+                },
+                "example": {
+                  "meter": {
+                    "id": 1,
+                    "name": "Strom",
+                    "unit": "kWh",
+                    "serial_number": "E-001"
+                  },
+                  "readings": [
+                    {
+                      "id": 12,
+                      "reading_date": "2025-01-15",
+                      "value": 15234.5
+                    },
+                    {
+                      "id": 11,
+                      "reading_date": "2024-12-15",
+                      "value": 14890.2
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/readings": {
+      "post": {
+        "summary": "Create a new reading",
+        "description": "Records a new meter reading. The reading value should be the current meter display value (cumulative), not consumption.",
+        "operationId": "createReading",
+        "tags": ["Readings"],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/CreateReading"
+        },
+        "responses": {
+          "201": {
+            "description": "Reading created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Reading"
+                },
+                "example": {
+                  "id": 13,
+                  "meter_id": 1,
+                  "reading_date": "2025-01-31",
+                  "value": 15456.7
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/meters": {
+      "get": {
+        "summary": "List all meters (v1)",
+        "description": "Returns a list of all utility meters.",
+        "operationId": "listMetersV1",
+        "tags": ["Meters", "API v1"],
+        "responses": {
+          "200": {
+            "description": "List of meters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Meter"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/v1/meters/{meterId}": {
+      "get": {
+        "summary": "Get meter details",
+        "description": "Returns details for a specific meter.",
+        "operationId": "getMeterV1",
+        "tags": ["Meters", "API v1"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MeterId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Meter details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Meter"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/meters/{meterId}/latest": {
+      "get": {
+        "summary": "Get latest reading",
+        "description": "Returns the most recent reading for a meter. Useful for pre-filling input forms or sanity checks when adding new readings.",
+        "operationId": "getLatestReadingV1",
+        "tags": ["Readings", "API v1"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MeterId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest reading for the meter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeterWithLatestReading"
+                },
+                "example": {
+                  "meter": {
+                    "id": 1,
+                    "name": "Strom",
+                    "unit": "kWh"
+                  },
+                  "reading": {
+                    "id": 12,
+                    "reading_date": "2025-01-15",
+                    "value": 15234.5
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/meters/{meterId}/readings": {
+      "get": {
+        "summary": "Get readings with pagination",
+        "description": "Returns readings for a meter with optional limit. Ordered by date descending (newest first).",
+        "operationId": "getReadingsV1",
+        "tags": ["Readings", "API v1"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MeterId"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of readings to return",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Readings for the meter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeterWithReadingsV1"
+                },
+                "example": {
+                  "meter": {
+                    "id": 1,
+                    "name": "Strom",
+                    "unit": "kWh"
+                  },
+                  "readings": [
+                    {
+                      "id": 12,
+                      "reading_date": "2025-01-15",
+                      "value": 15234.5
+                    },
+                    {
+                      "id": 11,
+                      "reading_date": "2024-12-15",
+                      "value": 14890.2
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/readings": {
+      "post": {
+        "summary": "Create a new reading (v1)",
+        "description": "Records a new meter reading. The reading value should be the current meter display value (cumulative), not consumption.",
+        "operationId": "createReadingV1",
+        "tags": ["Readings", "API v1"],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/CreateReading"
+        },
+        "responses": {
+          "201": {
+            "description": "Reading created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Reading"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "API key for authentication. Set via API_KEY environment variable on the server. Default: 'default-api-key'"
+      }
+    },
+    "parameters": {
+      "MeterId": {
+        "name": "meterId",
+        "in": "path",
+        "required": true,
+        "description": "The unique identifier of the meter",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "example": 1
+      }
+    },
+    "requestBodies": {
+      "CreateReading": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateReadingRequest"
+            },
+            "example": {
+              "meter_id": 1,
+              "reading_date": "2025-01-31",
+              "value": 15456.7
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "StatusResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["ok"],
+            "description": "API health status"
+          }
+        },
+        "required": ["status"]
+      },
+      "Meter": {
+        "type": "object",
+        "description": "A utility meter (electricity, gas, or water)",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Unique identifier",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name of the meter (Strom, Gas, Wasser)",
+            "example": "Strom"
+          },
+          "unit": {
+            "type": "string",
+            "description": "Unit of measurement (kWh, m³, Liter)",
+            "example": "kWh"
+          },
+          "serial_number": {
+            "type": "string",
+            "description": "Meter serial number",
+            "example": "STROM-001"
+          }
+        },
+        "required": ["id", "name", "unit", "serial_number"]
+      },
+      "MeterSummary": {
+        "type": "object",
+        "description": "A meter without serial number (used in reading responses)",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "Strom"
+          },
+          "unit": {
+            "type": "string",
+            "example": "kWh"
+          }
+        },
+        "required": ["id", "name", "unit"]
+      },
+      "Reading": {
+        "type": "object",
+        "description": "A meter reading record with meter_id",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Unique identifier",
+            "example": 12
+          },
+          "meter_id": {
+            "type": "integer",
+            "description": "ID of the associated meter",
+            "example": 1
+          },
+          "reading_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of the reading (ISO 8601 format)",
+            "example": "2025-01-15"
+          },
+          "value": {
+            "type": "number",
+            "format": "double",
+            "description": "Meter reading value (cumulative, not consumption)",
+            "example": 15234.5
+          }
+        },
+        "required": ["id", "meter_id", "reading_date", "value"]
+      },
+      "ReadingSummary": {
+        "type": "object",
+        "description": "A reading with reading_date field (base API format)",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 12
+          },
+          "reading_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2025-01-15"
+          },
+          "value": {
+            "type": "number",
+            "format": "double",
+            "example": 15234.5
+          }
+        },
+        "required": ["id", "reading_date", "value"]
+      },
+      "ReadingSummaryV1": {
+        "type": "object",
+        "description": "A reading with reading_date field (v1 API format)",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 12
+          },
+          "reading_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of the reading",
+            "example": "2025-01-15"
+          },
+          "value": {
+            "type": "number",
+            "format": "double",
+            "example": 15234.5
+          }
+        },
+        "required": ["id", "reading_date", "value"]
+      },
+      "MeterWithReadings": {
+        "type": "object",
+        "description": "A meter with all its readings (base API format)",
+        "properties": {
+          "meter": {
+            "$ref": "#/components/schemas/Meter"
+          },
+          "readings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReadingSummary"
+            }
+          }
+        },
+        "required": ["meter", "readings"]
+      },
+      "MeterWithReadingsV1": {
+        "type": "object",
+        "description": "A meter with readings (v1 API format)",
+        "properties": {
+          "meter": {
+            "$ref": "#/components/schemas/MeterSummary"
+          },
+          "readings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReadingSummaryV1"
+            }
+          }
+        },
+        "required": ["meter", "readings"]
+      },
+      "MeterWithLatestReading": {
+        "type": "object",
+        "description": "A meter with its latest reading",
+        "properties": {
+          "meter": {
+            "$ref": "#/components/schemas/MeterSummary"
+          },
+          "reading": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ReadingSummaryV1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The latest reading, or null if no readings exist"
+          }
+        },
+        "required": ["meter", "reading"]
+      },
+      "CreateReadingRequest": {
+        "type": "object",
+        "description": "Request body for creating a new reading",
+        "properties": {
+          "meter_id": {
+            "type": "integer",
+            "description": "ID of the meter",
+            "example": 1
+          },
+          "reading_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of the reading (YYYY-MM-DD format)",
+            "example": "2025-01-31"
+          },
+          "value": {
+            "type": "number",
+            "format": "double",
+            "description": "Current meter reading value (must be >= previous reading)",
+            "example": 15456.7
+          }
+        },
+        "required": ["meter_id", "reading_date", "value"]
+      },
+      "Error": {
+        "type": "object",
+        "description": "Error response",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message",
+            "example": "Unauthorized"
+          }
+        },
+        "required": ["error"]
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing or invalid API key",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Unauthorized"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": "Meter not found"
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "Invalid request",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "examples": {
+              "missingField": {
+                "summary": "Missing required field",
+                "value": {
+                  "error": "Missing required field: meter_id"
+                }
+              },
+              "invalidDate": {
+                "summary": "Invalid date format",
+                "value": {
+                  "error": "Invalid date format. Use YYYY-MM-DD"
+                }
+              },
+              "noJson": {
+                "summary": "No JSON provided",
+                "value": {
+                  "error": "No JSON data provided"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Health",
+      "description": "API health and status"
+    },
+    {
+      "name": "Documentation",
+      "description": "API documentation endpoints"
+    },
+    {
+      "name": "Meters",
+      "description": "Utility meter management"
+    },
+    {
+      "name": "Readings",
+      "description": "Meter reading operations"
+    },
+    {
+      "name": "API v1",
+      "description": "Extended API v1 endpoints with additional features"
+    }
+  ]
+}

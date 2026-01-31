@@ -6,5 +6,6 @@ flask_wtf
 python-dateutil
 psycopg2-binary
 gunicorn
+flasgger
 
 pytest

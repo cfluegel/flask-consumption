@@ -48,7 +48,7 @@ def get_latest_reading(meter_id):
         },
         'reading': {
             'id': latest.id,
-            'date': latest.reading_date.isoformat(),
+            'reading_date': latest.reading_date.isoformat(),
             'value': latest.value
         } if latest else None
     })
@@ -72,7 +72,7 @@ def get_readings(meter_id):
         },
         'readings': [{
             'id': r.id,
-            'date': r.reading_date.isoformat(),
+            'reading_date': r.reading_date.isoformat(),
             'value': r.value
         } for r in readings]
     })

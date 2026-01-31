@@ -68,8 +68,11 @@ app/
 │   ├── routes.py   # View functions (dashboard, meter detail, readings CRUD)
 │   ├── forms.py    # WTForms (LoginForm, ReadingForm)
 │   └── templates/  # Jinja2 templates
-└── api/            # REST API blueprint (/api prefix)
-    └── routes.py   # API endpoints with X-API-Key authentication
+├── api/            # Base REST API blueprint (/api prefix)
+│   ├── routes.py   # API endpoints with X-API-Key authentication
+│   └── openapi.json # OpenAPI 3.0 specification
+└── api_v1/         # Extended REST API blueprint (/api/v1 prefix)
+    └── routes.py   # Additional endpoints (latest reading, pagination)
 ```
 
 ### Extensions (`app/extensions.py`)
@@ -83,12 +86,24 @@ app/
 - `MeterReading` - Meter reading (meter_id, reading_date, value)
 
 ### API Endpoints
+
+**Base API (`/api`):**
 - `GET /api/status` - Health check (no auth)
+- `GET /api/openapi.json` - OpenAPI 3.0 specification (no auth)
 - `GET /api/meters` - List all meters
 - `GET /api/meters/<id>/readings` - Get readings for a meter
 - `POST /api/readings` - Create a new reading
 
-All API endpoints (except /status) require `X-API-Key` header.
+**Extended API (`/api/v1`):**
+- `GET /api/v1/meters` - List all meters
+- `GET /api/v1/meters/<id>` - Get meter details
+- `GET /api/v1/meters/<id>/latest` - Get latest reading for a meter
+- `GET /api/v1/meters/<id>/readings?limit=N` - Get readings with pagination (default limit: 10)
+- `POST /api/v1/readings` - Create a new reading
+
+All API endpoints (except /status and /openapi.json) require `X-API-Key` header.
+
+**Response format:** Both APIs use consistent field naming with `reading_date` for date fields in reading responses.
 
 ## Tech Stack
 - Flask with Jinja2 templates
