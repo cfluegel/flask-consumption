@@ -222,3 +222,70 @@ class TestAuthentication:
         response = authenticated_client.get('/login', follow_redirects=False)
         assert response.status_code == 302
         assert '/' in response.location
+
+
+class TestReadingFormPreviousReading:
+    """Tests for previous reading display in reading form."""
+
+    def test_new_reading_shows_previous(self, client, sample_readings, app):
+        """Test new reading form displays previous reading value."""
+        with app.app_context():
+            meter = Meter.query.filter_by(name='Strom').first()
+            response = client.get(f'/reading/new?meter_id={meter.id}')
+            assert response.status_code == 200
+            # Should display "Alter Zählerstand" label
+            assert 'Alter Z'.encode() in response.data
+            # Should NOT display "Keine vorherige Ablesung" since we have readings
+            assert 'Keine vorherige Ablesung'.encode() not in response.data
+
+    def test_new_reading_no_previous(self, client, sample_meters, app):
+        """Test new reading form shows 'Keine vorherige Ablesung' when no prior reading."""
+        with app.app_context():
+            meter = Meter.query.filter_by(name='Strom').first()
+            # Delete all readings for this meter
+            MeterReading.query.filter_by(meter_id=meter.id).delete()
+            db.session.commit()
+
+            response = client.get(f'/reading/new?meter_id={meter.id}')
+            assert response.status_code == 200
+            assert 'Keine vorherige Ablesung'.encode() in response.data
+
+    def test_edit_reading_shows_previous(self, client, sample_readings, app):
+        """Test edit reading form displays previous reading value."""
+        with app.app_context():
+            # Get a reading that has a previous reading
+            meter = Meter.query.filter_by(name='Strom').first()
+            readings = MeterReading.query.filter_by(meter_id=meter.id).order_by(MeterReading.reading_date.desc()).all()
+
+            if len(readings) > 1:
+                # Use the second reading (not the first) so there's a previous one
+                reading = readings[0]
+                response = client.get(f'/reading/{reading.id}/edit')
+                assert response.status_code == 200
+                # Should display "Alter Zählerstand" label
+                assert 'Alter Z'.encode() in response.data
+
+    def test_new_reading_without_meter_id(self, client, sample_meters, app):
+        """Test new reading form without meter_id doesn't show previous reading field."""
+        with app.app_context():
+            response = client.get('/reading/new')
+            assert response.status_code == 200
+            # Without meter_id, should not display the previous reading section
+            assert 'Keine vorherige Ablesung'.encode() not in response.data
+
+
+class TestDashboardYearlyConsumption:
+    """Tests for yearly consumption display on dashboard."""
+
+    def test_index_shows_yearly_consumption_column(self, client, sample_readings):
+        """Test dashboard displays Jahresverbrauch column."""
+        response = client.get('/')
+        assert response.status_code == 200
+        assert 'Jahresverbrauch'.encode() in response.data
+
+    def test_index_has_column_grouping(self, client, sample_readings):
+        """Test dashboard has visual column grouping classes."""
+        response = client.get('/')
+        assert response.status_code == 200
+        assert b'column-group-reading' in response.data
+        assert b'column-group-consumption' in response.data

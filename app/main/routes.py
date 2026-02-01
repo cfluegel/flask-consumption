@@ -16,9 +16,10 @@ def index():
     avg_3month = {m.id: m.get_3month_average() for m in meters}
     pred_weighted = {m.id: m.get_prediction_weighted() for m in meters}
     pred_seasonal = {m.id: m.get_prediction_seasonal() for m in meters}
+    yearly_consumption = {m.id: m.get_yearly_consumption() for m in meters}
     return render_template('index.html', meters=meters, consumption_data=consumption_data,
                            avg_3month=avg_3month, pred_weighted=pred_weighted,
-                           pred_seasonal=pred_seasonal)
+                           pred_seasonal=pred_seasonal, yearly_consumption=yearly_consumption)
 
 
 @main_bp.route('/graphs')
@@ -48,11 +49,16 @@ def reading_new():
     form.meter_id.choices = [(m.id, f"{m.name} ({m.unit})") for m in Meter.query.all()]
 
     # Pre-fill with today's date and meter_id from query params
+    selected_meter = None
+    previous_reading = None
     if request.method == 'GET':
         form.reading_date.data = date.today()
         meter_id = request.args.get('meter_id', type=int)
         if meter_id:
             form.meter_id.data = meter_id
+            selected_meter = Meter.query.get(meter_id)
+            if selected_meter:
+                previous_reading = selected_meter.get_previous_reading()
 
     if form.validate_on_submit():
         reading = MeterReading(
@@ -65,7 +71,8 @@ def reading_new():
         flash('Ablesung erfolgreich gespeichert.', 'success')
         return redirect(url_for('main.meter_detail', meter_id=form.meter_id.data))
 
-    return render_template('reading_form.html', form=form, title='Neue Ablesung')
+    return render_template('reading_form.html', form=form, title='Neue Ablesung',
+                           previous_reading=previous_reading, selected_meter=selected_meter)
 
 
 @main_bp.route('/reading/<int:reading_id>/edit', methods=['GET', 'POST'])
@@ -73,6 +80,10 @@ def reading_edit(reading_id):
     reading = MeterReading.query.get_or_404(reading_id)
     form = ReadingForm(obj=reading)
     form.meter_id.choices = [(m.id, f"{m.name} ({m.unit})") for m in Meter.query.all()]
+
+    # Get the reading before the one being edited
+    selected_meter = reading.meter
+    previous_reading = selected_meter.get_previous_reading(before_date=reading.reading_date)
 
     if form.validate_on_submit():
         reading.meter_id = form.meter_id.data
@@ -82,7 +93,8 @@ def reading_edit(reading_id):
         flash('Ablesung erfolgreich aktualisiert.', 'success')
         return redirect(url_for('main.meter_detail', meter_id=reading.meter_id))
 
-    return render_template('reading_form.html', form=form, title='Ablesung bearbeiten')
+    return render_template('reading_form.html', form=form, title='Ablesung bearbeiten',
+                           previous_reading=previous_reading, selected_meter=selected_meter)
 
 
 @main_bp.route('/reading/<int:reading_id>/delete', methods=['POST'])

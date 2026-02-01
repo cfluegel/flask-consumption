@@ -246,6 +246,45 @@ class Meter(db.Model):
         adjustment = recent_avg / last_year_avg
         return last_year_value * adjustment
 
+    def get_yearly_consumption(self) -> float | None:
+        """Returns total consumption from the last 12 complete months.
+
+        Returns None if insufficient data (less than 2 readings spanning at least 1 month).
+        """
+        consumption = self.get_monthly_consumption(months=13, newest_first=True)
+
+        # Filter out months with no data and skip current (potentially incomplete) month
+        values = [v for _, v in consumption if v is not None]
+
+        if len(values) > 12:
+            values = values[1:13]  # Skip most recent, take next 12
+        elif len(values) > 1:
+            values = values[:12]  # Take what we have (up to 12)
+        else:
+            return None
+
+        if not values:
+            return None
+
+        return sum(values)
+
+    def get_previous_reading(self, before_date: date | None = None) -> 'MeterReading | None':
+        """Returns the reading before the given date, or the last reading if no date specified.
+
+        Args:
+            before_date: If provided, returns the most recent reading before this date.
+                        If None, returns the most recent reading overall.
+
+        Returns:
+            MeterReading or None if no reading exists.
+        """
+        query = MeterReading.query.filter_by(meter_id=self.id)
+
+        if before_date is not None:
+            query = query.filter(MeterReading.reading_date < before_date)
+
+        return query.order_by(MeterReading.reading_date.desc()).first()
+
 
 class MeterReading(db.Model):
     id = db.Column(db.Integer, primary_key=True)

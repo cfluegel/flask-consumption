@@ -26,5 +26,5 @@ class LoginForm(FlaskForm):
 class ReadingForm(FlaskForm):
     meter_id = SelectField('Zähler', coerce=int, validators=[DataRequired()])
     reading_date = DateField('Datum', validators=[DataRequired()])
-    value = GermanFloatField('Zählerstand', validators=[DataRequired()])
+    value = GermanFloatField('Neuer Zählerstand', validators=[DataRequired()])
     submit = SubmitField('Speichern')

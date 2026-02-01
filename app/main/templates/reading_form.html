@@ -18,6 +18,17 @@
       <span style="color: red;">{{ error }}</span>
     {% endfor %}
 
+    {% if selected_meter %}
+    <label>Alter Zählerstand</label>
+    <div class="readonly-field" style="margin-top: 0.25rem;">
+      {% if previous_reading %}
+        {{ previous_reading.value|de_number }} {{ selected_meter.unit }} ({{ previous_reading.reading_date.strftime('%d.%m.%Y') }})
+      {% else %}
+        Keine vorherige Ablesung
+      {% endif %}
+    </div>
+    {% endif %}
+
     <label>{{ form.value.label.text }}</label>
     {{ form.value(type="text", inputmode="decimal", placeholder="z.B. 254,96", style="width: 100%; padding: 0.5rem; margin-top: 0.25rem; box-sizing: border-box;") }}
     {% for error in form.value.errors %}

@@ -180,6 +180,87 @@ class TestMeterModel:
             with pytest.raises(Exception):
                 db.session.commit()
 
+    def test_get_yearly_consumption(self, app, sample_meters):
+        """Test yearly consumption returns sum of 12 months."""
+        with app.app_context():
+            meter = Meter.query.get(sample_meters['Strom'])
+            today = date.today()
+
+            # Create 13 months of readings for a full year
+            base_value = 1000.0
+            for i in range(13, -1, -1):
+                reading_date = today - relativedelta(months=i)
+                reading_date = reading_date.replace(day=1)
+                value = base_value + (13 - i) * 100  # 100 units per month
+                reading = MeterReading(
+                    meter_id=meter.id,
+                    reading_date=reading_date,
+                    value=value
+                )
+                db.session.add(reading)
+            db.session.commit()
+
+            yearly = meter.get_yearly_consumption()
+            assert yearly is not None
+            assert isinstance(yearly, float)
+            # Should be approximately 12 * 100 = 1200 (sum of 12 months consumption)
+            assert yearly > 0
+
+    def test_get_yearly_consumption_no_data(self, app, sample_meters):
+        """Test yearly consumption returns None with no readings."""
+        with app.app_context():
+            meter = Meter.query.get(sample_meters['Strom'])
+            MeterReading.query.filter_by(meter_id=meter.id).delete()
+            db.session.commit()
+
+            yearly = meter.get_yearly_consumption()
+            assert yearly is None
+
+    def test_get_previous_reading(self, app, sample_readings):
+        """Test get_previous_reading returns correct earlier reading."""
+        with app.app_context():
+            meter = Meter.query.get(sample_readings['Strom'])
+            today = date.today()
+
+            # Get the previous reading before today
+            prev = meter.get_previous_reading(before_date=today)
+            assert prev is not None
+            assert prev.reading_date < today
+
+            # Get the reading before that
+            prev2 = meter.get_previous_reading(before_date=prev.reading_date)
+            if prev2:
+                assert prev2.reading_date < prev.reading_date
+
+    def test_get_previous_reading_no_earlier(self, app, sample_meters):
+        """Test get_previous_reading returns None when no earlier reading exists."""
+        with app.app_context():
+            meter = Meter.query.get(sample_meters['Strom'])
+
+            # Create just one reading
+            reading = MeterReading(
+                meter_id=meter.id,
+                reading_date=date.today(),
+                value=1000.0
+            )
+            db.session.add(reading)
+            db.session.commit()
+
+            # No reading before today's reading
+            prev = meter.get_previous_reading(before_date=date.today())
+            assert prev is None
+
+    def test_get_previous_reading_without_date(self, app, sample_readings):
+        """Test get_previous_reading returns last reading when no date specified."""
+        with app.app_context():
+            meter = Meter.query.get(sample_readings['Strom'])
+            last_reading = meter.get_last_reading()
+            prev_reading = meter.get_previous_reading()
+
+            # Without a date, should return the most recent reading
+            assert prev_reading is not None
+            assert prev_reading.id == last_reading.id
+
 
 class TestMeterReadingModel:
     """Tests for MeterReading model."""
