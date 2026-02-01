@@ -1,0 +1,96 @@
+{% extends "pwa_base.html" %}
+
+{% block title %}Einrichtung - Verbrauchstracker{% endblock %}
+{% block header_title %}Einrichtung{% endblock %}
+{% block nav_setup %}active{% endblock %}
+
+{% block content %}
+<div class="setup-container">
+    <div class="setup-card">
+        <h2>API-Schlüssel eingeben</h2>
+        <p class="setup-description">
+            Geben Sie Ihren API-Schlüssel ein, um die App zu nutzen.
+            Der Schlüssel wird lokal auf Ihrem Gerät gespeichert.
+        </p>
+
+        <form id="setup-form" class="setup-form">
+            <div class="form-group">
+                <label for="api-key">API-Schlüssel</label>
+                <input type="text" id="api-key" name="api-key"
+                       placeholder="Ihr API-Schlüssel"
+                       autocomplete="off"
+                       autocapitalize="none"
+                       autocorrect="off"
+                       spellcheck="false">
+            </div>
+
+            <div id="setup-error" class="form-error hidden"></div>
+
+            <button type="submit" class="btn btn-primary" id="save-btn">
+                Speichern
+            </button>
+        </form>
+
+        <div id="current-key" class="current-key hidden">
+            <p>Aktueller Schlüssel ist gespeichert.</p>
+            <button type="button" class="btn btn-secondary" id="clear-btn">
+                Schlüssel löschen
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('setup-form');
+    const apiKeyInput = document.getElementById('api-key');
+    const errorDiv = document.getElementById('setup-error');
+    const currentKeyDiv = document.getElementById('current-key');
+    const saveBtn = document.getElementById('save-btn');
+    const clearBtn = document.getElementById('clear-btn');
+
+    // Check if key already exists
+    const existingKey = PWA.getApiKey();
+    if (existingKey) {
+        currentKeyDiv.classList.remove('hidden');
+        apiKeyInput.value = existingKey;
+    }
+
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        errorDiv.classList.add('hidden');
+
+        const apiKey = apiKeyInput.value.trim();
+        if (!apiKey) {
+            errorDiv.textContent = 'Bitte geben Sie einen API-Schlüssel ein.';
+            errorDiv.classList.remove('hidden');
+            return;
+        }
+
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Prüfe...';
+
+        // Test the API key
+        const isValid = await PWA.validateApiKey(apiKey);
+
+        if (isValid) {
+            PWA.setApiKey(apiKey);
+            window.location.href = '{{ url_for("pwa.index") }}';
+        } else {
+            errorDiv.textContent = 'Ungültiger API-Schlüssel. Bitte prüfen Sie Ihre Eingabe.';
+            errorDiv.classList.remove('hidden');
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Speichern';
+        }
+    });
+
+    clearBtn.addEventListener('click', function() {
+        PWA.clearApiKey();
+        apiKeyInput.value = '';
+        currentKeyDiv.classList.add('hidden');
+    });
+});
+</script>
+{% endblock %}

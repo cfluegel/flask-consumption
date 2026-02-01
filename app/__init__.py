@@ -8,6 +8,7 @@ from .extensions import db, migrate, login_manager, csrf
 from .main import main_bp
 from .api import api_bp
 from .api_v1 import api_v1_bp
+from .pwa import pwa_bp
 
 def create_app(config_object='config.Config'):
     app = Flask(__name__)
@@ -47,6 +48,8 @@ def create_app(config_object='config.Config'):
     csrf.exempt(api_bp)  # API uses API key auth instead of CSRF
     app.register_blueprint(api_v1_bp, url_prefix='/api/v1')
     csrf.exempt(api_v1_bp)
+    app.register_blueprint(pwa_bp)
+    csrf.exempt(pwa_bp)  # PWA uses API key auth
 
     # Custom Jinja2 filters
     @app.template_filter('de_number')

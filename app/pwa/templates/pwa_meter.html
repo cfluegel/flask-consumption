@@ -1,0 +1,118 @@
+{% extends "pwa_base.html" %}
+
+{% block title %}Zähler - Verbrauchstracker{% endblock %}
+{% block header_title %}<span id="meter-name">Zähler</span>{% endblock %}
+
+{% block header_actions %}
+<a href="{{ url_for('pwa.index') }}" class="header-back">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+</a>
+{% endblock %}
+
+{% block content %}
+<div id="meter-detail" class="meter-detail">
+    <div class="meter-info">
+        <span id="meter-unit" class="meter-unit"></span>
+        <span id="meter-serial" class="meter-serial"></span>
+    </div>
+
+    <a href="{{ url_for('pwa.add_reading', meter_id=meter_id) }}" class="btn btn-primary btn-block">
+        + Neue Ablesung hinzufügen
+    </a>
+
+    <h3 class="section-title">Ablesungen</h3>
+    <div id="readings-list" class="readings-list">
+        <!-- Readings will be loaded dynamically -->
+    </div>
+
+    <button id="load-more" class="btn btn-secondary btn-block hidden">
+        Mehr laden
+    </button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const meterId = {{ meter_id }};
+let currentLimit = 10;
+
+document.addEventListener('DOMContentLoaded', async function() {
+    if (!PWA.getApiKey()) {
+        window.location.href = '{{ url_for("pwa.setup") }}';
+        return;
+    }
+
+    await loadMeterData();
+});
+
+async function loadMeterData() {
+    PWA.showLoading();
+
+    try {
+        // Load meter details and readings
+        const [meter, readingsData] = await Promise.all([
+            PWA.getMeter(meterId),
+            PWA.getMeterReadings(meterId, currentLimit)
+        ]);
+
+        // Update header and info
+        document.getElementById('meter-name').textContent = meter.name;
+        document.getElementById('meter-unit').textContent = meter.unit;
+        document.getElementById('meter-serial').textContent = 'SN: ' + meter.serial_number;
+        document.title = meter.name + ' - Verbrauchstracker';
+
+        // Render readings
+        renderReadings(readingsData.readings, meter.unit);
+
+        // Show load more button if there might be more readings
+        const loadMoreBtn = document.getElementById('load-more');
+        if (readingsData.readings.length >= currentLimit) {
+            loadMoreBtn.classList.remove('hidden');
+        }
+
+        PWA.hideLoading();
+    } catch (error) {
+        PWA.hideLoading();
+        if (error.status === 401) {
+            window.location.href = '{{ url_for("pwa.setup") }}';
+        } else {
+            PWA.showError('Fehler beim Laden: ' + error.message);
+        }
+    }
+}
+
+function renderReadings(readings, unit) {
+    const container = document.getElementById('readings-list');
+
+    if (readings.length === 0) {
+        container.innerHTML = '<p class="empty-message">Keine Ablesungen vorhanden.</p>';
+        return;
+    }
+
+    container.innerHTML = readings.map((reading, index) => {
+        const consumption = index < readings.length - 1
+            ? readings[index].value - readings[index + 1].value
+            : null;
+
+        return `
+            <div class="reading-item">
+                <div class="reading-main">
+                    <span class="reading-value">${PWA.formatNumber(reading.value)} ${PWA.escapeHtml(unit)}</span>
+                    <span class="reading-date">${PWA.formatDate(reading.reading_date)}</span>
+                </div>
+                ${consumption !== null ? `
+                    <div class="reading-consumption">
+                        Verbrauch: ${PWA.formatNumber(consumption)} ${PWA.escapeHtml(unit)}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }).join('');
+}
+
+document.getElementById('load-more').addEventListener('click', async function() {
+    currentLimit += 10;
+    await loadMeterData();
+});
+</script>
+{% endblock %}

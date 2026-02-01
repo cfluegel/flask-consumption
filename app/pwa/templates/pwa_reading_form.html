@@ -1,0 +1,139 @@
+{% extends "pwa_base.html" %}
+
+{% block title %}Ablesung hinzufügen - Verbrauchstracker{% endblock %}
+{% block header_title %}Neue Ablesung{% endblock %}
+
+{% block header_actions %}
+<a href="{{ url_for('pwa.meter_detail', meter_id=meter_id) }}" class="header-back">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <form id="reading-form" class="reading-form">
+        <div class="form-group">
+            <label for="meter-name">Zähler</label>
+            <input type="text" id="meter-name" readonly class="readonly-field">
+        </div>
+
+        <div class="form-group">
+            <label for="reading-date">Datum</label>
+            <input type="date" id="reading-date" required>
+        </div>
+
+        <div class="form-group">
+            <label for="reading-value">Zählerstand</label>
+            <input type="text" id="reading-value" inputmode="decimal" required
+                   placeholder="z.B. 12345,67"
+                   autocomplete="off">
+            <small id="unit-hint" class="form-hint"></small>
+        </div>
+
+        <div id="previous-reading" class="previous-reading hidden">
+            <strong>Letzte Ablesung:</strong>
+            <span id="previous-value"></span>
+            <span id="previous-date"></span>
+        </div>
+
+        <div id="form-error" class="form-error hidden"></div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="submit-btn">
+            Speichern
+        </button>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const meterId = {{ meter_id }};
+let meterData = null;
+
+document.addEventListener('DOMContentLoaded', async function() {
+    if (!PWA.getApiKey()) {
+        window.location.href = '{{ url_for("pwa.setup") }}';
+        return;
+    }
+
+    // Set default date to today
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('reading-date').value = today;
+
+    PWA.showLoading();
+
+    try {
+        // Load meter info and latest reading
+        const [meter, latestData] = await Promise.all([
+            PWA.getMeter(meterId),
+            PWA.getLatestReading(meterId)
+        ]);
+
+        meterData = meter;
+
+        // Update form
+        document.getElementById('meter-name').value = meter.name;
+        document.getElementById('unit-hint').textContent = 'Einheit: ' + meter.unit;
+
+        // Show previous reading if exists
+        if (latestData && latestData.reading) {
+            const prevDiv = document.getElementById('previous-reading');
+            document.getElementById('previous-value').textContent =
+                PWA.formatNumber(latestData.reading.value) + ' ' + meter.unit;
+            document.getElementById('previous-date').textContent =
+                '(' + PWA.formatDate(latestData.reading.reading_date) + ')';
+            prevDiv.classList.remove('hidden');
+        }
+
+        PWA.hideLoading();
+    } catch (error) {
+        PWA.hideLoading();
+        if (error.status === 401) {
+            window.location.href = '{{ url_for("pwa.setup") }}';
+        } else {
+            PWA.showError('Fehler beim Laden: ' + error.message);
+        }
+    }
+});
+
+document.getElementById('reading-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const errorDiv = document.getElementById('form-error');
+    const submitBtn = document.getElementById('submit-btn');
+    errorDiv.classList.add('hidden');
+
+    const dateValue = document.getElementById('reading-date').value;
+    let valueInput = document.getElementById('reading-value').value.trim();
+
+    // Convert German number format to standard format
+    valueInput = valueInput.replace(/\./g, '').replace(',', '.');
+    const value = parseFloat(valueInput);
+
+    if (!dateValue) {
+        errorDiv.textContent = 'Bitte geben Sie ein Datum ein.';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+
+    if (isNaN(value)) {
+        errorDiv.textContent = 'Bitte geben Sie einen gültigen Zählerstand ein.';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Speichern...';
+
+    try {
+        await PWA.createReading(meterId, dateValue, value);
+        window.location.href = '/pwa/meter/' + meterId;
+    } catch (error) {
+        errorDiv.textContent = 'Fehler beim Speichern: ' + error.message;
+        errorDiv.classList.remove('hidden');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Speichern';
+    }
+});
+</script>
+{% endblock %}

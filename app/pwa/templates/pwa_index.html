@@ -1,0 +1,75 @@
+{% extends "pwa_base.html" %}
+
+{% block title %}Verbrauchstracker{% endblock %}
+{% block header_title %}Zähler{% endblock %}
+{% block nav_home %}active{% endblock %}
+
+{% block content %}
+<div id="meters-container" class="meters-grid">
+    <!-- Meters will be loaded dynamically -->
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', async function() {
+    // Check for API key
+    if (!PWA.getApiKey()) {
+        window.location.href = '{{ url_for("pwa.setup") }}';
+        return;
+    }
+
+    PWA.showLoading();
+
+    try {
+        const meters = await PWA.getMeters();
+        const container = document.getElementById('meters-container');
+
+        if (meters.length === 0) {
+            container.innerHTML = '<p class="empty-message">Keine Zähler vorhanden.</p>';
+            PWA.hideLoading();
+            return;
+        }
+
+        // Fetch latest readings for all meters in parallel
+        const latestReadings = await Promise.all(
+            meters.map(meter => PWA.getLatestReading(meter.id))
+        );
+
+        container.innerHTML = meters.map((meter, index) => {
+            const latest = latestReadings[index];
+            const reading = latest && latest.reading;
+
+            return `
+                <div class="meter-card" onclick="location.href='/pwa/meter/${meter.id}'">
+                    <div class="meter-header">
+                        <h2 class="meter-name">${PWA.escapeHtml(meter.name)}</h2>
+                        <span class="meter-unit">${PWA.escapeHtml(meter.unit)}</span>
+                    </div>
+                    <div class="meter-reading">
+                        ${reading ? `
+                            <span class="reading-value">${PWA.formatNumber(reading.value)}</span>
+                            <span class="reading-date">${PWA.formatDate(reading.reading_date)}</span>
+                        ` : `
+                            <span class="no-reading">Keine Ablesung</span>
+                        `}
+                    </div>
+                    <a href="/pwa/meter/${meter.id}/add" class="btn btn-small btn-primary" onclick="event.stopPropagation();">
+                        + Ablesung
+                    </a>
+                </div>
+            `;
+        }).join('');
+
+        PWA.hideLoading();
+    } catch (error) {
+        PWA.hideLoading();
+        if (error.status === 401) {
+            window.location.href = '{{ url_for("pwa.setup") }}';
+        } else {
+            PWA.showError('Fehler beim Laden der Zähler: ' + error.message);
+        }
+    }
+});
+</script>
+{% endblock %}
