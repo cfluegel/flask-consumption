@@ -7,6 +7,7 @@ A Flask-based web application for tracking utility consumption (electricity, nat
 - Track multiple utility meters (Strom/Electricity, Gas, Wasser/Water)
 - Record and manage monthly meter readings
 - Visualize consumption data with Chart.js
+- **Progressive Web App (PWA)** for mobile devices (iOS/Android)
 - REST API for mobile app integration
 - Docker deployment support (SQLite or PostgreSQL)
 - Data import/export functionality
@@ -40,6 +41,23 @@ python run.py
 ```
 
 The application will be available at `http://127.0.0.1:5000`
+
+### Progressive Web App (PWA)
+
+The PWA is available at `/pwa/` and provides a mobile-optimized interface for viewing meters and adding readings.
+
+**Setup on iOS:**
+1. Open `http://your-server:5000/pwa/` in Safari
+2. Enter your API key (default: `default-api-key`)
+3. Tap Share → "Add to Home Screen"
+4. Open from home screen for standalone app experience
+
+**PWA Features:**
+- Mobile-optimized meter dashboard
+- View reading history per meter
+- Add new readings with German number format support
+- Works as standalone app on iOS and Android
+- API key stored locally (persists across sessions)
 
 ### Docker Deployment
 
@@ -135,9 +153,14 @@ flask-consumption/
 │   ├── api/                 # Base REST API blueprint (/api)
 │   │   ├── routes.py        # API endpoints
 │   │   └── openapi.json     # OpenAPI 3.0 specification
-│   └── api_v1/              # Extended REST API blueprint (/api/v1)
-│       └── routes.py        # Additional endpoints (latest, pagination)
+│   ├── api_v1/              # Extended REST API blueprint (/api/v1)
+│   │   └── routes.py        # Additional endpoints (latest, pagination)
+│   └── pwa/                 # Progressive Web App blueprint (/pwa)
+│       ├── routes.py        # PWA view functions
+│       ├── templates/       # Mobile-optimized templates
+│       └── static/          # PWA assets (manifest, icons, CSS, JS)
 ├── migrations/              # Alembic database migrations
+├── tests/                   # Pytest test suite
 ├── config.py                # Configuration classes
 ├── run.py                   # Application entry point
 ├── Dockerfile               # Docker image definition

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Flask-based web application for tracking consumption of utilities (electricity, natural gas, water). Users record monthly meter readings which are stored in a database and visualized with charts.
 
-**Current state:** Core meter reading functionality implemented with web UI and mobile API.
+**Current state:** Core meter reading functionality implemented with web UI, mobile API, and Progressive Web App (PWA).
 
 ## Commands
 
@@ -71,8 +71,12 @@ app/
 ├── api/            # Base REST API blueprint (/api prefix)
 │   ├── routes.py   # API endpoints with X-API-Key authentication
 │   └── openapi.json # OpenAPI 3.0 specification
-└── api_v1/         # Extended REST API blueprint (/api/v1 prefix)
-    └── routes.py   # Additional endpoints (latest reading, pagination)
+├── api_v1/         # Extended REST API blueprint (/api/v1 prefix)
+│   └── routes.py   # Additional endpoints (latest reading, pagination)
+└── pwa/            # Progressive Web App blueprint (/pwa prefix)
+    ├── routes.py   # PWA view functions
+    ├── templates/  # Mobile-optimized Jinja2 templates
+    └── static/     # PWA assets (manifest.json, icons, pwa.css, pwa.js)
 ```
 
 ### Extensions (`app/extensions.py`)
@@ -105,14 +109,24 @@ All API endpoints (except /status and /openapi.json) require `X-API-Key` header.
 
 **Response format:** Both APIs use consistent field naming with `reading_date` for date fields in reading responses.
 
+**PWA Routes (`/pwa`):**
+- `GET /pwa/` - Dashboard with meter cards and latest readings
+- `GET /pwa/setup` - API key entry page (one-time setup)
+- `GET /pwa/meter/<id>` - Meter detail with readings history
+- `GET /pwa/meter/<id>/add` - Add new reading form
+- `GET /pwa/manifest.json` - Web App Manifest
+
+The PWA uses API key authentication via localStorage and calls `/api/v1` endpoints.
+
 ## Tech Stack
 - Flask with Jinja2 templates
 - SQLAlchemy ORM (SQLite default, PostgreSQL planned via `DATABASE_URL`)
 - Flask-Login for authentication
 - Flask-WTF for forms with CSRF protection
 - Chart.js for data visualization
-- HTMX for dynamic UI (planned)
+- Progressive Web App with Web App Manifest
 
 ## Design Specifications
 - Sand-colored theme with CSS variables (--sand-light, --sand-medium, --sand-dark, --sand-accent)
 - German language UI
+- PWA: Mobile-optimized with iOS safe area support, touch-friendly buttons (min 44px), bottom navigation
