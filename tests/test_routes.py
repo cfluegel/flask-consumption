@@ -288,4 +288,5 @@ class TestDashboardYearlyConsumption:
         response = client.get('/')
         assert response.status_code == 200
         assert b'column-group-reading' in response.data
-        assert b'column-group-consumption' in response.data
+        assert b'column-group-statistics' in response.data
+        assert b'column-group-prediction' in response.data

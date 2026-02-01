@@ -10,10 +10,10 @@
           <th style="padding: 0.5rem;">Zähler</th>
           <th style="padding: 0.5rem;" class="column-group-reading column-group-start">Letzte Ablesung</th>
           <th style="padding: 0.5rem;" class="column-group-reading">Letzter Stand</th>
-          <th style="padding: 0.5rem;" class="column-group-consumption column-group-start">Jahresverbrauch</th>
-          <th style="padding: 0.5rem;" class="column-group-consumption">3-Monats-Ø</th>
-          <th style="padding: 0.5rem;" class="column-group-consumption">Prognose (Trend)</th>
-          <th style="padding: 0.5rem;" class="column-group-consumption">Prognose (Saison)</th>
+          <th style="padding: 0.5rem;" class="column-group-statistics column-group-start">Jahresverbrauch</th>
+          <th style="padding: 0.5rem;" class="column-group-statistics">3-Monats-Ø</th>
+          <th style="padding: 0.5rem;" class="column-group-prediction column-group-start">Prognose (Trend)</th>
+          <th style="padding: 0.5rem;" class="column-group-prediction">Prognose (Saison)</th>
           <th style="padding: 0.5rem;">Aktionen</th>
         </tr>
       </thead>
@@ -38,28 +38,28 @@
                 -
               {% endif %}
             </td>
-            <td style="padding: 0.5rem;" class="column-group-consumption column-group-start">
+            <td style="padding: 0.5rem;" class="column-group-statistics column-group-start">
               {% if yearly_consumption[meter.id] is not none %}
                 {{ yearly_consumption[meter.id]|de_number }} {{ meter.unit }}
               {% else %}
                 -
               {% endif %}
             </td>
-            <td style="padding: 0.5rem;" class="column-group-consumption">
+            <td style="padding: 0.5rem;" class="column-group-statistics">
               {% if avg_3month[meter.id] is not none %}
                 {{ avg_3month[meter.id]|de_number }} {{ meter.unit }}
               {% else %}
                 -
               {% endif %}
             </td>
-            <td style="padding: 0.5rem;" class="column-group-consumption">
+            <td style="padding: 0.5rem;" class="column-group-prediction column-group-start">
               {% if pred_weighted[meter.id] is not none %}
                 {{ pred_weighted[meter.id]|de_number }} {{ meter.unit }}
               {% else %}
                 -
               {% endif %}
             </td>
-            <td style="padding: 0.5rem;" class="column-group-consumption">
+            <td style="padding: 0.5rem;" class="column-group-prediction">
               {% if pred_seasonal[meter.id] is not none %}
                 {{ pred_seasonal[meter.id]|de_number }} {{ meter.unit }}
               {% else %}
