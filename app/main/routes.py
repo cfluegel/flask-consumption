@@ -6,7 +6,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 from . import main_bp
 from .forms import LoginForm, ReadingForm
 from ..extensions import db
-from ..models import Meter, MeterReading, User
+from ..models import Meter, MeterReading, User, WeatherData
 
 
 @main_bp.route('/')
@@ -33,7 +33,30 @@ def graphs():
 def graph_detail(meter_id):
     meter = Meter.query.get_or_404(meter_id)
     consumption_data = meter.get_monthly_consumption(months=None, newest_first=False)
-    return render_template('graph_detail.html', meter=meter, consumption_data=consumption_data)
+
+    # Only include weather data for Gas meter (id=2)
+    weather_data = []
+    if meter_id == 2:
+        weather_records = WeatherData.query.all()
+        month_names = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun',
+                       'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez']
+        weather_by_month = {}
+        for w in weather_records:
+            year = w.year_month[:4]
+            month_idx = int(w.year_month[4:]) - 1
+            label = f"{month_names[month_idx]} {year}"
+            weather_by_month[label] = {
+                'temp_min': w.temp_min,
+                'temp_max': w.temp_max,
+                'temp_avg': w.temp_avg
+            }
+
+        for label, _ in consumption_data:
+            weather_data.append(weather_by_month.get(label, {}))
+
+    return render_template('graph_detail.html', meter=meter,
+                           consumption_data=consumption_data,
+                           weather_data=weather_data)
 
 
 @main_bp.route('/meter/<int:meter_id>')

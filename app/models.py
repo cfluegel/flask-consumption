@@ -298,6 +298,39 @@ class MeterReading(db.Model):
     )
 
 
+class WeatherData(db.Model):
+    """Monthly weather data from DWD (Deutscher Wetterdienst)."""
+    id = db.Column(db.Integer, primary_key=True)
+    station_id = db.Column(db.Integer, nullable=False)
+    year_month = db.Column(db.String(6), nullable=False)  # YYYYMM format
+    quality_level = db.Column(db.Integer, nullable=True)
+
+    # Temperature fields (°C)
+    temp_min = db.Column(db.Float, nullable=True)  # Lowest temperature
+    temp_min_avg = db.Column(db.Float, nullable=True)  # Avg daily minimum
+    temp_avg = db.Column(db.Float, nullable=True)  # Mean temperature
+    temp_max_avg = db.Column(db.Float, nullable=True)  # Avg daily maximum
+    temp_max = db.Column(db.Float, nullable=True)  # Highest temperature
+
+    # Other weather fields
+    sunshine_hours = db.Column(db.Float, nullable=True)  # Total sunshine duration (hours)
+    cloud_cover_avg = db.Column(db.Float, nullable=True)  # Mean cloud cover (eighths)
+
+    # Precipitation fields (mm)
+    precipitation_sum = db.Column(db.Float, nullable=True)  # Total precipitation
+    precipitation_max = db.Column(db.Float, nullable=True)  # Max daily precipitation
+
+    # Wind fields
+    wind_speed_avg = db.Column(db.Float, nullable=True)  # Mean wind force (Beaufort)
+    wind_gust_max = db.Column(db.Float, nullable=True)  # Peak wind gust (m/s)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('station_id', 'year_month', name='unique_station_month'),
+    )
+
+
 @login_manager.user_loader
 def load_user(user_id: str) -> User | None:
     # Flask-Login erwartet hier die Rückgabe eines User-Objekts oder None

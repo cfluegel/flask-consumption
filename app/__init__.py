@@ -305,3 +305,239 @@ def register_commands(app):
         click.echo(f"\nImport abgeschlossen:")
         click.echo(f"  Zähler:     {meters_created} erstellt, {meters_skipped} übersprungen")
         click.echo(f"  Ablesungen: {readings_created} erstellt, {readings_skipped} übersprungen")
+
+    @app.cli.command('import-weather')
+    @click.option('--url', default=None, help='Override default DWD URL')
+    @click.option('--replace', is_flag=True, help='Replace all existing weather data')
+    def import_weather(url, replace):
+        """Importiert monatliche Wetterdaten vom DWD (Hamburg-Fuhlsbüttel)."""
+        import urllib.request
+        from .models import WeatherData
+
+        # Default URL for Hamburg-Fuhlsbüttel monthly data
+        default_url = 'https://www.dwd.de/DE/leistungen/_config/leistungsteckbriefPublication.txt?view=nasPublication&nn=16102&imageFilePath=8524108716561010473591414984380285860348440627905136707616031491601294722759953476578874542442119146105183517945099480938740343906988335742522410754862714750285564712567437754031667430876202844830680654990991014883769890983300283888580251123815305533&download=true'
+        data_url = url or default_url
+
+        click.echo(f'Downloading weather data from DWD...')
+        click.echo(f'URL: {data_url}')
+
+        try:
+            # Download the file
+            if data_url.endswith('.zip'):
+                import zipfile
+                import io
+                import tempfile
+
+                with urllib.request.urlopen(data_url, timeout=60) as response:
+                    zip_data = response.read()
+
+                # Extract the data file from the zip
+                with zipfile.ZipFile(io.BytesIO(zip_data)) as zf:
+                    # Find the data file (starts with 'produkt_')
+                    data_file = None
+                    for name in zf.namelist():
+                        if name.startswith('produkt_') and name.endswith('.txt'):
+                            data_file = name
+                            break
+
+                    if not data_file:
+                        click.echo('Fehler: Keine Datendatei im ZIP gefunden.')
+                        return
+
+                    click.echo(f'Extrahiere: {data_file}')
+                    content = zf.read(data_file).decode('latin-1')
+            else:
+                with urllib.request.urlopen(data_url, timeout=60) as response:
+                    content = response.read().decode('latin-1')
+
+        except Exception as e:
+            click.echo(f'Fehler beim Download: {e}')
+            return
+
+        # Strip <pre> tags if present
+        content = content.strip()
+        if content.startswith('<pre>'):
+            content = content[5:]
+        if content.endswith('</pre>'):
+            content = content[:-6]
+        content = content.strip()
+
+        # Parse the content - fixed-width format from DWD
+        lines = content.strip().split('\n')
+        if not lines:
+            click.echo('Fehler: Keine Daten gefunden.')
+            return
+
+        # Find header and separator lines
+        header_idx = None
+        separator_idx = None
+        for i, line in enumerate(lines):
+            if 'STAT' in line and 'JJJJMM' in line:
+                header_idx = i
+            elif header_idx is not None and line.strip().startswith('-----'):
+                separator_idx = i
+                break
+
+        if header_idx is None or separator_idx is None:
+            click.echo('Fehler: Header oder Trennzeile nicht gefunden.')
+            return
+
+        # Parse column positions from separator line (-----  ------  etc.)
+        separator = lines[separator_idx]
+        header = lines[header_idx]
+
+        # Find column boundaries from dashes
+        col_positions = []
+        in_col = False
+        col_start = 0
+        for i, char in enumerate(separator):
+            if char == '-' and not in_col:
+                col_start = i
+                in_col = True
+            elif char != '-' and in_col:
+                col_positions.append((col_start, i))
+                in_col = False
+        if in_col:
+            col_positions.append((col_start, len(separator)))
+
+        # Extract column names from header using positions
+        columns = []
+        for start, end in col_positions:
+            col_name = header[start:end].strip()
+            columns.append(col_name)
+
+        click.echo(f'Gefundene Spalten: {columns}')
+
+        # DWD column mapping to our model fields
+        field_mapping = {
+            'STAT': 'station_id',
+            'JJJJMM': 'year_month',
+            'QN': 'quality_level',
+            'TNN': 'temp_min',
+            'TNM': 'temp_min_avg',
+            'TMM': 'temp_avg',
+            'TXM': 'temp_max_avg',
+            'TXX': 'temp_max',
+            'SOS': 'sunshine_hours',
+            'NMM': 'cloud_cover_avg',
+            'RSS': 'precipitation_sum',
+            'RSX': 'precipitation_max',
+            'FMM': 'wind_speed_avg',
+            'FXX': 'wind_gust_max',
+        }
+
+        # Map column names to positions
+        col_map = {name: (pos, columns[i]) for i, (name, pos) in enumerate(zip(columns, col_positions))}
+
+        if replace:
+            count = WeatherData.query.count()
+            if count > 0:
+                click.echo(f'Lösche {count} bestehende Wetterdaten-Einträge...')
+                WeatherData.query.delete()
+                db.session.commit()
+
+        records_created = 0
+        records_skipped = 0
+
+        # Process data lines (skip header and separator line)
+        for line in lines[separator_idx + 1:]:
+            if not line.strip() or line.strip().startswith('-'):
+                continue
+
+            # Extract values using fixed-width positions
+            values = {}
+            for col_name, (start, end) in zip(columns, col_positions):
+                if end <= len(line):
+                    val = line[start:end].strip()
+                elif start < len(line):
+                    val = line[start:].strip()
+                else:
+                    val = ''
+                values[col_name] = val
+
+            # Extract station_id and year_month
+            try:
+                station_id = int(values.get('STAT', ''))
+                year_month = values.get('JJJJMM', '')
+            except (ValueError, TypeError):
+                continue
+
+            if not year_month or len(year_month) != 6:
+                continue
+
+            # Check for existing record
+            existing = WeatherData.query.filter_by(
+                station_id=station_id,
+                year_month=year_month
+            ).first()
+
+            if existing:
+                records_skipped += 1
+                continue
+
+            # Build the record
+            weather = WeatherData(station_id=station_id, year_month=year_month)
+
+            # Map remaining fields
+            for dwd_col, model_field in field_mapping.items():
+                if dwd_col in ['STAT', 'JJJJMM']:
+                    continue  # Already handled
+
+                val = values.get(dwd_col, '').strip()
+                if val and val != '-999' and val != '-999.0':
+                    try:
+                        if model_field == 'quality_level':
+                            setattr(weather, model_field, int(val))
+                        else:
+                            setattr(weather, model_field, float(val))
+                    except ValueError:
+                        pass  # Leave as NULL
+
+            db.session.add(weather)
+            records_created += 1
+
+        db.session.commit()
+
+        click.echo(f'\nImport abgeschlossen:')
+        click.echo(f'  Neue Einträge: {records_created}')
+        click.echo(f'  Übersprungen (bereits vorhanden): {records_skipped}')
+
+    @app.cli.command('show-weather')
+    @click.option('--limit', default=12, help='Anzahl der Einträge (Standard: 12)')
+    @click.option('--all', 'show_all', is_flag=True, help='Alle Einträge anzeigen')
+    def show_weather(limit, show_all):
+        """Zeigt Wetterdaten aus der Datenbank an."""
+        from .models import WeatherData
+
+        query = WeatherData.query.order_by(WeatherData.year_month.desc())
+        if not show_all:
+            query = query.limit(limit)
+
+        records = query.all()
+
+        if not records:
+            click.echo('Keine Wetterdaten vorhanden.')
+            return
+
+        # Header
+        click.echo(f"{'Monat':<8} {'QN':>3} {'Temp Ø':>7} {'TMin Ø':>7} {'TMax Ø':>7} {'TMin':>7} {'TMax':>7} {'Sonne':>6} {'Wolken':>6} {'Regen':>6} {'RMax':>6} {'Wind':>5} {'Böen':>7}")
+        click.echo('-' * 100)
+
+        for r in records:
+            month = f"{r.year_month[:4]}-{r.year_month[4:]}"
+            qn = f"{r.quality_level}" if r.quality_level is not None else '-'
+            temp_avg = f"{r.temp_avg:.1f}" if r.temp_avg is not None else '-'
+            temp_min_avg = f"{r.temp_min_avg:.1f}" if r.temp_min_avg is not None else '-'
+            temp_max_avg = f"{r.temp_max_avg:.1f}" if r.temp_max_avg is not None else '-'
+            temp_min = f"{r.temp_min:.1f}" if r.temp_min is not None else '-'
+            temp_max = f"{r.temp_max:.1f}" if r.temp_max is not None else '-'
+            sunshine = f"{r.sunshine_hours:.0f}h" if r.sunshine_hours is not None else '-'
+            clouds = f"{r.cloud_cover_avg:.1f}/8" if r.cloud_cover_avg is not None else '-'
+            rain = f"{r.precipitation_sum:.0f}mm" if r.precipitation_sum is not None else '-'
+            rain_max = f"{r.precipitation_max:.0f}mm" if r.precipitation_max is not None else '-'
+            wind_avg = f"{r.wind_speed_avg:.1f}" if r.wind_speed_avg is not None else '-'
+            wind_gust = f"{r.wind_gust_max:.1f}" if r.wind_gust_max is not None else '-'
+
+            click.echo(f"{month:<8} {qn:>3} {temp_avg:>7} {temp_min_avg:>7} {temp_max_avg:>7} {temp_min:>7} {temp_max:>7} {sunshine:>6} {clouds:>6} {rain:>6} {rain_max:>6} {wind_avg:>5} {wind_gust:>7}")
+
+        click.echo(f'\nGesamt: {len(records)} Einträge')
