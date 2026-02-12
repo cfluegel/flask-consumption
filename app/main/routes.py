@@ -16,10 +16,12 @@ def index():
     avg_3month = {m.id: m.get_3month_average() for m in meters}
     pred_weighted = {m.id: m.get_prediction_weighted() for m in meters}
     pred_seasonal = {m.id: m.get_prediction_seasonal() for m in meters}
+    pred_calculated = {m.id: m.get_prediction_calculated() for m in meters}
     yearly_consumption = {m.id: m.get_yearly_consumption() for m in meters}
     return render_template('index.html', meters=meters, consumption_data=consumption_data,
                            avg_3month=avg_3month, pred_weighted=pred_weighted,
-                           pred_seasonal=pred_seasonal, yearly_consumption=yearly_consumption)
+                           pred_seasonal=pred_seasonal, pred_calculated=pred_calculated,
+                           yearly_consumption=yearly_consumption)
 
 
 @main_bp.route('/graphs')

@@ -246,6 +246,37 @@ class Meter(db.Model):
         adjustment = recent_avg / last_year_avg
         return last_year_value * adjustment
 
+    def get_prediction_calculated(self) -> float | None:
+        """Returns calculated prediction based on actual readings in the current month.
+
+        Uses the daily consumption rate between the earliest and latest reading
+        of the current month, extrapolated to the full month.
+        Requires >= 2 readings in the current month on different days.
+        """
+        today = date.today()
+        first_of_month = date(today.year, today.month, 1)
+        _, days_in_month = monthrange(today.year, today.month)
+
+        readings = (MeterReading.query
+                    .filter_by(meter_id=self.id)
+                    .filter(MeterReading.reading_date >= first_of_month)
+                    .filter(MeterReading.reading_date <= today)
+                    .order_by(MeterReading.reading_date.asc())
+                    .all())
+
+        if len(readings) < 2:
+            return None
+
+        baseline = readings[0]
+        latest = readings[-1]
+        days_between = (latest.reading_date - baseline.reading_date).days
+
+        if days_between <= 0:
+            return None
+
+        daily_rate = (latest.value - baseline.value) / days_between
+        return daily_rate * days_in_month
+
     def get_yearly_consumption(self) -> float | None:
         """Returns total consumption from the last 12 complete months.
 

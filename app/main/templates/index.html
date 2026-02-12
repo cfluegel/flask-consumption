@@ -12,7 +12,8 @@
           <th style="padding: 0.5rem;" class="column-group-reading">Letzter Stand</th>
           <th style="padding: 0.5rem;" class="column-group-statistics column-group-start">Jahresverbrauch</th>
           <th style="padding: 0.5rem;" class="column-group-statistics">3-Monats-Ø</th>
-          <th style="padding: 0.5rem;" class="column-group-prediction column-group-start">Prognose (Trend)</th>
+          <th style="padding: 0.5rem;" class="column-group-prediction column-group-start">Prognose (Berechnet)</th>
+          <th style="padding: 0.5rem;" class="column-group-prediction">Prognose (Trend)</th>
           <th style="padding: 0.5rem;" class="column-group-prediction">Prognose (Saison)</th>
           <th style="padding: 0.5rem;">Aktionen</th>
         </tr>
@@ -53,6 +54,13 @@
               {% endif %}
             </td>
             <td style="padding: 0.5rem;" class="column-group-prediction column-group-start">
+              {% if pred_calculated[meter.id] is not none %}
+                {{ pred_calculated[meter.id]|de_number }} {{ meter.unit }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td style="padding: 0.5rem;" class="column-group-prediction">
               {% if pred_weighted[meter.id] is not none %}
                 {{ pred_weighted[meter.id]|de_number }} {{ meter.unit }}
               {% else %}
