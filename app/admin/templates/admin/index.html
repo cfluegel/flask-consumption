@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Admin</h1>
+
+<div style="display: flex; gap: 2rem; flex-wrap: wrap; margin-top: 1.5rem;">
+  <div style="flex: 1; min-width: 280px; border: 1px solid var(--sand-dark); border-radius: 8px; padding: 1.5rem; background: var(--sand-medium);">
+    <h2>Export</h2>
+    <p>Alle Zähler und Ablesungen als JSON-Datei herunterladen.</p>
+    <a href="{{ url_for('admin.export_data') }}" class="button">Daten exportieren</a>
+  </div>
+
+  <div style="flex: 1; min-width: 280px; border: 1px solid var(--sand-dark); border-radius: 8px; padding: 1.5rem; background: var(--sand-medium);">
+    <h2>Import</h2>
+    <p>Zähler und Ablesungen aus einer JSON-Datei importieren. Bereits vorhandene Einträge werden übersprungen.</p>
+    <form method="post" action="{{ url_for('admin.import_data') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="file" name="file" accept=".json" style="margin-bottom: 0.75rem;">
+      <br>
+      <input type="submit" value="Daten importieren">
+    </form>
+  </div>
+</div>
+{% endblock %}

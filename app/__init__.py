@@ -9,6 +9,7 @@ from .main import main_bp
 from .api import api_bp
 from .api_v1 import api_v1_bp
 from .pwa import pwa_bp
+from .admin import admin_bp
 
 def create_app(config_object='config.Config'):
     app = Flask(__name__)
@@ -50,6 +51,7 @@ def create_app(config_object='config.Config'):
     csrf.exempt(api_v1_bp)
     app.register_blueprint(pwa_bp)
     csrf.exempt(pwa_bp)  # PWA uses API key auth
+    app.register_blueprint(admin_bp, url_prefix='/admin')
 
     # Custom Jinja2 filters
     @app.template_filter('de_number')
