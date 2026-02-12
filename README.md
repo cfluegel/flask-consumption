@@ -8,9 +8,11 @@ A Flask-based web application for tracking utility consumption (electricity, nat
 - Record and manage monthly meter readings
 - Visualize consumption data with Chart.js
 - **Progressive Web App (PWA)** for mobile devices (iOS/Android)
+- **Admin area** with web-based data export and import
 - REST API for mobile app integration
 - Docker deployment support (SQLite or PostgreSQL)
-- Data import/export functionality
+- Data import/export via CLI and web UI
+- Consumption predictions (trend, seasonal, and calculated from current month)
 - German language UI with sand-colored theme
 
 ## Quick Start
@@ -58,6 +60,15 @@ The PWA is available at `/pwa/` and provides a mobile-optimized interface for vi
 - Add new readings with German number format support
 - Works as standalone app on iOS and Android
 - API key stored locally (persists across sessions)
+
+### Admin Area
+
+The admin area is available at `/admin/` and provides web-based data management:
+
+- **Export** — Download all meters and readings as a timestamped JSON file
+- **Import** — Upload a previously exported JSON file to merge data (duplicates are skipped)
+
+No authentication is required for the admin area.
 
 ### Docker Deployment
 
@@ -155,10 +166,13 @@ flask-consumption/
 │   │   └── openapi.json     # OpenAPI 3.0 specification
 │   ├── api_v1/              # Extended REST API blueprint (/api/v1)
 │   │   └── routes.py        # Additional endpoints (latest, pagination)
-│   └── pwa/                 # Progressive Web App blueprint (/pwa)
-│       ├── routes.py        # PWA view functions
-│       ├── templates/       # Mobile-optimized templates
-│       └── static/          # PWA assets (manifest, icons, CSS, JS)
+│   ├── pwa/                 # Progressive Web App blueprint (/pwa)
+│   │   ├── routes.py        # PWA view functions
+│   │   ├── templates/       # Mobile-optimized templates
+│   │   └── static/          # PWA assets (manifest, icons, CSS, JS)
+│   └── admin/               # Admin blueprint (/admin)
+│       ├── routes.py        # Export/import routes
+│       └── templates/       # Admin templates
 ├── migrations/              # Alembic database migrations
 ├── tests/                   # Pytest test suite
 ├── config.py                # Configuration classes

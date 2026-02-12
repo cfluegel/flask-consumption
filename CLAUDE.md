@@ -73,10 +73,13 @@ app/
 │   └── openapi.json # OpenAPI 3.0 specification
 ├── api_v1/         # Extended REST API blueprint (/api/v1 prefix)
 │   └── routes.py   # Additional endpoints (latest reading, pagination)
-└── pwa/            # Progressive Web App blueprint (/pwa prefix)
-    ├── routes.py   # PWA view functions
-    ├── templates/  # Mobile-optimized Jinja2 templates
-    └── static/     # PWA assets (manifest.json, icons, pwa.css, pwa.js)
+├── pwa/            # Progressive Web App blueprint (/pwa prefix)
+│   ├── routes.py   # PWA view functions
+│   ├── templates/  # Mobile-optimized Jinja2 templates
+│   └── static/     # PWA assets (manifest.json, icons, pwa.css, pwa.js)
+└── admin/          # Admin blueprint (/admin prefix)
+    ├── routes.py   # Export/import routes
+    └── templates/  # Admin templates
 ```
 
 ### Extensions (`app/extensions.py`)
@@ -117,6 +120,13 @@ All API endpoints (except /status and /openapi.json) require `X-API-Key` header.
 - `GET /pwa/manifest.json` - Web App Manifest
 
 The PWA uses API key authentication via localStorage and calls `/api/v1` endpoints.
+
+**Admin Routes (`/admin`):**
+- `GET /admin/` - Admin page with export/import UI
+- `GET /admin/export` - Download all data as JSON file
+- `POST /admin/import` - Upload and merge data from JSON file
+
+No authentication required for admin routes.
 
 ## Tech Stack
 - Flask with Jinja2 templates
