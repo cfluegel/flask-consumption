@@ -26,10 +26,15 @@ class Meter(db.Model):
     name = db.Column(db.String(80), unique=True, nullable=False)
     unit = db.Column(db.String(20), nullable=False)
     serial_number = db.Column(db.String(100), nullable=False)
+    weather_overlay = db.Column(db.Boolean, nullable=False, default=False,
+                                server_default='0')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     readings = db.relationship('MeterReading', backref='meter', lazy='dynamic',
                                order_by='desc(MeterReading.reading_date)')
+    tariffs = db.relationship('Tariff', backref='meter', lazy='dynamic',
+                              order_by='desc(Tariff.valid_from)',
+                              cascade='all, delete-orphan')
 
     def get_last_reading(self) -> 'MeterReading | None':
         return self.readings.first()
@@ -326,6 +331,26 @@ class MeterReading(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint('meter_id', 'reading_date', name='unique_meter_date'),
+    )
+
+
+class Tariff(db.Model):
+    """Preistarif für einen Zähler, gültig ab einem Stichtag.
+
+    Bei mehreren Tarifen gilt pro Monat der jüngste Tarif, dessen
+    valid_from vor oder am Monatsanfang liegt (ganzer Monat, keine
+    tagesanteilige Aufteilung bei Wechsel mitten im Monat).
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    meter_id = db.Column(db.Integer, db.ForeignKey('meter.id'), nullable=False)
+    name = db.Column(db.String(120), nullable=True)
+    price_per_unit = db.Column(db.Float, nullable=False)  # Arbeitspreis €/Einheit
+    base_price_monthly = db.Column(db.Float, nullable=False, default=0.0)  # Grundpreis €/Monat
+    valid_from = db.Column(db.Date, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('meter_id', 'valid_from', name='unique_meter_tariff_date'),
     )
 
 

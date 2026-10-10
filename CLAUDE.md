@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Flask-based web application for tracking consumption of utilities (electricity, natural gas, water). Users record monthly meter readings which are stored in a database and visualized with charts.
+Web application for tracking consumption of utilities (electricity, natural gas, water). Users record monthly meter readings which are stored in a database and visualized with charts. Includes cost tracking via per-meter tariff history, consumption predictions, year-over-year comparison, and weather analysis (heating degree days).
 
-**Current state:** Core meter reading functionality implemented with web UI, mobile API, and Progressive Web App (PWA).
+**Architecture:** Flask backend serving a React SPA (main UI) plus a separate PWA, two authenticated REST APIs, and an admin area.
 
 ## Commands
 
@@ -22,6 +22,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 flask db upgrade
 flask seed-meters
+cd frontend && npm install && npm run build && cd ..
 ```
 
 ### Run Development Server
@@ -29,12 +30,13 @@ flask seed-meters
 source venv/bin/activate
 python run.py
 ```
-Server runs on `127.0.0.1:5000` by default.
+Server runs on `127.0.0.1:5000` and serves the built SPA from `frontend/dist`.
+
+**Frontend dev with hot reload:** additionally run `cd frontend && npm run dev` → Vite on `127.0.0.1:5173` proxies `/ui-api`, `/api`, `/admin`, `/pwa`, `/apidocs` to Flask.
 
 Environment variables:
 - `FLASK_CONFIG` - Config class (default: `config.Config`, options: `config.DevelopmentConfig`, `config.ProductionConfig`, `config.TestingConfig`)
-- `FLASK_RUN_HOST` - Host address
-- `FLASK_RUN_PORT` - Port number
+- `FLASK_RUN_HOST` / `FLASK_RUN_PORT` - Host/port
 - `FLASK_DEBUG` - Enable debug mode (`true`/`1`/`t`)
 - `API_KEY` - API key for mobile API (default: `default-api-key`)
 
@@ -44,99 +46,81 @@ flask db migrate -m "Description"   # Generate migration
 flask db upgrade                    # Apply migrations
 ```
 
-### Seed Data
+### Seed Data & CLI
 ```bash
-flask seed-meters    # Create initial meters (Strom, Gas, Wasser)
+flask seed-meters                               # Create initial meters (Strom, Gas, Wasser)
+flask set-weather-overlay --meter-id 2 [--off]  # Toggle temperature overlay per meter
+flask export-data f.json / flask import-data f.json [--replace]  # incl. tariffs
+flask import-weather                            # DWD monthly weather data
 ```
 
 ### Run Tests
 ```bash
-pytest
+pytest                          # Backend (needs venv)
+cd frontend && npx vitest run   # Frontend unit tests
+cd frontend && npm run build    # TypeScript check + production build
 ```
 
 ## Architecture
 
 ### Application Factory Pattern
 - `run.py` - Entry point, creates app via factory
-- `app/__init__.py` - `create_app()` factory function
+- `app/__init__.py` - `create_app()` factory function + CLI commands
 - `config.py` - Environment configs (Development, Production, Testing)
 
 ### Blueprint Structure
 ```
 app/
-├── main/           # Main web UI blueprint
-│   ├── routes.py   # View functions (dashboard, meter detail, readings CRUD)
-│   ├── forms.py    # WTForms (LoginForm, ReadingForm)
-│   └── templates/  # Jinja2 templates
-├── api/            # Base REST API blueprint (/api prefix)
-│   ├── routes.py   # API endpoints with X-API-Key authentication
-│   └── openapi.json # OpenAPI 3.0 specification
-├── api_v1/         # Extended REST API blueprint (/api/v1 prefix)
-│   └── routes.py   # Additional endpoints (latest reading, pagination)
+├── spa/            # Serves built React SPA from frontend/dist (/ + catch-all)
+├── web_api/        # UI API for the SPA (/ui-api prefix, no auth, CSRF-exempt)
+│   ├── routes.py   # Dashboard, readings/tariffs CRUD, costs, year-comparison, weather
+│   └── serializers.py
+├── services/       # Business logic shared by blueprints
+│   ├── costs.py    # tariff_for_month, monthly_costs, yearly_cost, forecast_cost_current_month
+│   └── weather.py  # heating_degree_days (base 15°C), weather_series_for_meter
+├── api/            # Base REST API blueprint (/api prefix, X-API-Key)
+├── api_v1/         # Extended REST API blueprint (/api/v1 prefix, X-API-Key)
 ├── pwa/            # Progressive Web App blueprint (/pwa prefix)
-│   ├── routes.py   # PWA view functions
-│   ├── templates/  # Mobile-optimized Jinja2 templates
-│   └── static/     # PWA assets (manifest.json, icons, pwa.css, pwa.js)
-└── admin/          # Admin blueprint (/admin prefix)
-    ├── routes.py   # Export/import routes
-    └── templates/  # Admin templates
+└── admin/          # Admin blueprint (/admin prefix): JSON export/import (standalone template)
 ```
 
-### Extensions (`app/extensions.py`)
-- `db` - SQLAlchemy database
-- `migrate` - Flask-Migrate for Alembic migrations
-- `login_manager` - Flask-Login for authentication
+The SPA blueprint is registered LAST so `/api`, `/ui-api`, `/pwa`, `/admin`, `/apidocs` take precedence over the catch-all. If `frontend/dist` is missing, it returns a 503 hint instead of failing (tests don't require a frontend build).
+
+### Frontend (`frontend/`)
+Vite + React 18 + TypeScript (strict), React Router, Chart.js via react-chartjs-2. No UI framework; plain CSS with sand-theme custom properties in `src/theme.css`. German UI, German number formatting in `src/lib/format.ts` (mirrors the `de_number` Jinja filter). Pages in `src/pages/`, typed API client in `src/api/`. Routes: `/` (dashboard cards), `/zaehler/:id`, `/ablesung/neu`, `/kosten`, `/tarife`, `/vergleich`, `/grafiken/:id`, `/einstellungen`.
 
 ### Models (`app/models.py`)
-- `User` - Authentication model with password hashing
-- `Meter` - Utility meter (name, unit, serial_number)
-- `MeterReading` - Meter reading (meter_id, reading_date, value)
+- `User` - Auth model (kept for CLI/user management; no login flow in the web UI anymore)
+- `Meter` - Utility meter (name, unit, serial_number, weather_overlay) + consumption/prediction methods (`get_monthly_consumption` pro-rata engine, `get_3month_average`, `get_prediction_weighted/seasonal/calculated`, `get_yearly_consumption`)
+- `MeterReading` - Meter reading (meter_id, reading_date, value); unique per (meter_id, reading_date)
+- `Tariff` - Price history per meter (price_per_unit = Arbeitspreis €/unit, base_price_monthly = Grundpreis €/month, valid_from); unique per (meter_id, valid_from). One tariff applies per whole month (latest valid_from ≤ first of month); mid-month changes are not pro-rated.
+- `WeatherData` - DWD monthly weather (station_id, year_month YYYYMM, temperatures etc.)
 
 ### API Endpoints
 
-**Base API (`/api`):**
-- `GET /api/status` - Health check (no auth)
-- `GET /api/openapi.json` - OpenAPI 3.0 specification (no auth)
-- `GET /api/meters` - List all meters
-- `GET /api/meters/<id>/readings` - Get readings for a meter
-- `POST /api/readings` - Create a new reading
+**UI API (`/ui-api`)** — same-origin JSON API for the SPA, no auth, CSRF-exempt. Months serialized as `{year, month, label}`; dates ISO. Returns 409 with `{error}` on duplicate reading dates / tariff valid_from.
+- `GET /ui-api/dashboard` - All meters with last reading, stats, predictions, yearly/forecast costs, current tariff
+- `GET /ui-api/meters/<id>/consumption|readings|tariffs|costs|weather`
+- `GET /ui-api/meters/<id>/year-comparison?year=YYYY`
+- `POST/PUT/DELETE /ui-api/readings[/<id>]`, `POST /ui-api/meters/<id>/tariffs`, `PUT/DELETE /ui-api/tariffs/<id>`
+- `PATCH /ui-api/meters/<id>` - name, serial_number, weather_overlay
 
-**Extended API (`/api/v1`):**
-- `GET /api/v1/meters` - List all meters
-- `GET /api/v1/meters/<id>` - Get meter details
-- `GET /api/v1/meters/<id>/latest` - Get latest reading for a meter
-- `GET /api/v1/meters/<id>/readings?limit=N` - Get readings with pagination (default limit: 10)
-- `POST /api/v1/readings` - Create a new reading
+**Base API (`/api`)** and **Extended API (`/api/v1`)** — external clients (PWA, mobile); require `X-API-Key` header except `/api/status` and `/api/openapi.json`. Unchanged contract: meters list, readings (with `limit` pagination in v1), latest reading (v1), create reading.
 
-All API endpoints (except /status and /openapi.json) require `X-API-Key` header.
+**PWA (`/pwa`)** — mobile web app using `/api/v1` with localStorage API key. Unchanged.
 
-**Response format:** Both APIs use consistent field naming with `reading_date` for date fields in reading responses.
+**Admin (`/admin`)** — export/import UI. Export JSON contains `meters` (incl. `weather_overlay`), `readings`, `tariffs`; import accepts old exports without `tariffs`. No authentication.
 
-**PWA Routes (`/pwa`):**
-- `GET /pwa/` - Dashboard with meter cards and latest readings
-- `GET /pwa/setup` - API key entry page (one-time setup)
-- `GET /pwa/meter/<id>` - Meter detail with readings history
-- `GET /pwa/meter/<id>/add` - Add new reading form
-- `GET /pwa/manifest.json` - Web App Manifest
+## Deployment
 
-The PWA uses API key authentication via localStorage and calls `/api/v1` endpoints.
-
-**Admin Routes (`/admin`):**
-- `GET /admin/` - Admin page with export/import UI
-- `GET /admin/export` - Download all data as JSON file
-- `POST /admin/import` - Upload and merge data from JSON file
-
-No authentication required for admin routes.
+Docker multi-stage build: Node stage builds `frontend/dist`, Python stage copies it in. `docker-entrypoint.sh` runs `flask db upgrade` on start, so upgrading a live installation (e.g. verbrauch.gt57d.de) is pull/rebuild + restart — migrations and frontend ship automatically.
 
 ## Tech Stack
-- Flask with Jinja2 templates
-- SQLAlchemy ORM (SQLite default, PostgreSQL planned via `DATABASE_URL`)
-- Flask-Login for authentication
-- Flask-WTF for forms with CSRF protection
-- Chart.js for data visualization
-- Progressive Web App with Web App Manifest
+- Flask, SQLAlchemy ORM (SQLite default, PostgreSQL via `DATABASE_URL`), Flask-Migrate, Flask-WTF (admin form CSRF)
+- React 18 + TypeScript + Vite, Chart.js, React Router
+- pytest (backend), Vitest (frontend)
 
 ## Design Specifications
-- Sand-colored theme with CSS variables (--sand-light, --sand-medium, --sand-dark, --sand-accent)
-- German language UI
-- PWA: Mobile-optimized with iOS safe area support, touch-friendly buttons (min 44px), bottom navigation
+- Sand-colored theme via CSS variables (--sand-light #f5e6c8, --sand-medium #e8d4a8, --sand-dark #d4a574, --sand-accent #b8860b)
+- German language UI, German number format (1.234,56)
+- Mobile-first: viewport meta, 44px touch targets, bottom tab navigation ≤768px, 16px inputs (prevents iOS zoom), tables in overflow containers or card layouts

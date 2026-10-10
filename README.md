@@ -1,19 +1,21 @@
 # Flask Consumption Tracker
 
-A Flask-based web application for tracking utility consumption (electricity, natural gas, water). Record monthly meter readings, visualize consumption trends with charts, and access data via REST API.
+A web application for tracking utility consumption (electricity, natural gas, water). Record monthly meter readings, visualize consumption trends, track costs with tariff history, and access data via REST API. The main UI is a mobile-first React single-page app served by Flask.
 
 ## Features
 
 - Track multiple utility meters (Strom/Electricity, Gas, Wasser/Water)
 - Record and manage monthly meter readings
-- Visualize consumption data with Chart.js
+- **Mobile-first React SPA** with sand-colored theme and German UI
+- **Cost tracking** with per-meter tariff history (Arbeitspreis + Grundpreis, valid-from dates)
+- **Cost dashboard** with monthly cost charts and current-month cost forecast
+- **Year-over-year comparison** per month with deviation percentages
+- **Weather analysis** for gas meters: temperature overlay and weather-adjusted consumption (heating degree days, base 15 °C)
+- Consumption predictions (calculated from current month, trend, seasonal)
 - **Progressive Web App (PWA)** for mobile devices (iOS/Android)
-- **Admin area** with web-based data export and import
+- **Admin area** with web-based data export and import (JSON, includes tariffs)
 - REST API for mobile app integration
 - Docker deployment support (SQLite or PostgreSQL)
-- Data import/export via CLI and web UI
-- Consumption predictions (trend, seasonal, and calculated from current month)
-- German language UI with sand-colored theme
 
 ## Quick Start
 
@@ -24,25 +26,45 @@ A Flask-based web application for tracking utility consumption (electricity, nat
 git clone https://github.com/cfluegel/flask-consumption.git
 cd flask-consumption
 
-# Create and activate virtual environment
+# Backend: create and activate virtual environment
 python3 -m venv venv
 source venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
 
 # Initialize database
 flask db upgrade
 flask seed-meters
 
-# Create a user
-flask create-user --username admin --email admin@example.com
+# Frontend: build the React SPA (required once for production serving)
+cd frontend
+npm install
+npm run build
+cd ..
 
 # Run development server
 python run.py
 ```
 
-The application will be available at `http://127.0.0.1:5000`
+The application will be available at `http://127.0.0.1:5000`.
+
+**Frontend development with hot reload:** run `python run.py` in one terminal and `cd frontend && npm run dev` in another. The Vite dev server on `http://127.0.0.1:5173` proxies `/ui-api`, `/api`, `/admin`, `/pwa` and `/apidocs` to Flask.
+
+### Web UI (React SPA)
+
+Served at `/` from `frontend/dist`. Pages:
+
+| Route | Page |
+|---|---|
+| `/` | Dashboard with per-meter cards (readings, statistics, predictions, costs) |
+| `/zaehler/:id` | Meter detail with readings management |
+| `/ablesung/neu` | Add a new reading |
+| `/kosten` | Cost dashboard (monthly costs, yearly cost, forecast) |
+| `/tarife` | Tariff management (price history per meter) |
+| `/vergleich` | Year-over-year comparison |
+| `/grafiken/:id` | Consumption chart, optional temperature overlay and weather-adjusted view |
+| `/einstellungen` | Meter settings (name, serial number, weather overlay) and links |
+
+The SPA talks to the unauthenticated same-origin JSON API under `/ui-api` (dashboard, consumption, readings/tariffs CRUD, costs, year-comparison, weather).
 
 ### Progressive Web App (PWA)
 
@@ -65,12 +87,14 @@ The PWA is available at `/pwa/` and provides a mobile-optimized interface for vi
 
 The admin area is available at `/admin/` and provides web-based data management:
 
-- **Export** — Download all meters and readings as a timestamped JSON file
-- **Import** — Upload a previously exported JSON file to merge data (duplicates are skipped)
+- **Export** — Download all meters, readings and tariffs as a timestamped JSON file
+- **Import** — Upload a previously exported JSON file to merge data (duplicates are skipped). Exports from older versions (without tariffs) import fine.
 
 No authentication is required for the admin area.
 
 ### Docker Deployment
+
+The Docker image builds the React frontend in a Node stage automatically and runs `flask db upgrade` on startup — updating an existing installation is just a rebuild/pull and restart.
 
 ```bash
 # Simple setup with SQLite
@@ -79,10 +103,14 @@ docker compose -f docker-compose.sqlite.yml up -d
 # Production setup with PostgreSQL
 docker compose -f docker-compose.postgres.yml up -d
 
-# Initialize meters and create user
+# Initialize meters
 docker compose -f docker-compose.sqlite.yml exec app flask seed-meters
-docker compose -f docker-compose.sqlite.yml exec app flask create-user --username admin --email admin@example.com
+
+# Enable the temperature overlay for the gas meter
+docker compose -f docker-compose.sqlite.yml exec app flask set-weather-overlay --meter-id 2
 ```
+
+**Note on bind mounts:** The container runs as `appuser` which is typically assigned UID/GID 1000:1000 (not explicitly pinned in the Dockerfile). When using bind mounts, ensure the host directory is owned by the matching UID/GID.
 
 See [README-docker.md](README-docker.md) for detailed Docker deployment instructions.
 
@@ -100,11 +128,11 @@ Environment variables:
 
 ## API Usage
 
-Two API versions are available:
+Two authenticated API versions are available for external clients:
 - **Base API** (`/api`) - Core functionality
 - **Extended API** (`/api/v1`) - Additional features like latest reading and pagination
 
-All endpoints (except `/api/status` and `/api/openapi.json`) require the `X-API-Key` header.
+All endpoints (except `/api/status` and `/api/openapi.json`) require the `X-API-Key` header. (The SPA uses the separate unauthenticated `/ui-api` intended for same-origin use only.)
 
 ```bash
 # Health check
@@ -140,13 +168,20 @@ flask db migrate -m "msg"     # Generate new migration
 # Data management
 flask seed-meters             # Create default meters (Strom, Gas, Wasser)
 flask create-user             # Create a new user account
-flask export-data data.json   # Export all data to JSON
+flask export-data data.json   # Export all data (meters, readings, tariffs) to JSON
 flask import-data data.json   # Import data from JSON
 flask import-data data.json --replace  # Replace all data
 
-# Utilities
-flask list-readings           # Display all readings
-flask show-consumption        # Show consumption statistics
+# Meters & weather
+flask list-meters             # List meters with IDs and serial numbers
+flask update-meter-serial --meter-id 1 --serial NEW-SERIAL
+flask set-weather-overlay --meter-id 2         # Enable temperature overlay
+flask set-weather-overlay --meter-id 2 --off   # Disable it
+flask import-weather          # Import monthly DWD weather data
+flask show-weather            # Display stored weather data
+
+# Debugging
+flask debug-readings          # Display readings and computed consumption
 ```
 
 ## Project Structure
@@ -154,40 +189,46 @@ flask show-consumption        # Show consumption statistics
 ```
 flask-consumption/
 ├── app/
-│   ├── __init__.py          # Application factory
-│   ├── models.py            # SQLAlchemy models (User, Meter, MeterReading)
+│   ├── __init__.py          # Application factory, CLI commands
+│   ├── models.py            # SQLAlchemy models (User, Meter, MeterReading, Tariff, WeatherData)
 │   ├── extensions.py        # Flask extensions
-│   ├── main/                # Web UI blueprint
-│   │   ├── routes.py        # View functions
-│   │   ├── forms.py         # WTForms
-│   │   └── templates/       # Jinja2 templates
+│   ├── services/            # Business logic
+│   │   ├── costs.py         # Tariff selection, monthly/yearly costs, cost forecast
+│   │   └── weather.py       # Heating degree days, weather series
+│   ├── web_api/             # UI API blueprint (/ui-api) for the React SPA
+│   │   ├── routes.py        # Dashboard, CRUD, costs, comparison, weather endpoints
+│   │   └── serializers.py   # JSON serializers
+│   ├── spa/                 # Serves the built React SPA (catch-all routing)
 │   ├── api/                 # Base REST API blueprint (/api)
 │   │   ├── routes.py        # API endpoints
 │   │   └── openapi.json     # OpenAPI 3.0 specification
 │   ├── api_v1/              # Extended REST API blueprint (/api/v1)
 │   │   └── routes.py        # Additional endpoints (latest, pagination)
 │   ├── pwa/                 # Progressive Web App blueprint (/pwa)
-│   │   ├── routes.py        # PWA view functions
-│   │   ├── templates/       # Mobile-optimized templates
-│   │   └── static/          # PWA assets (manifest, icons, CSS, JS)
-│   └── admin/               # Admin blueprint (/admin)
-│       ├── routes.py        # Export/import routes
-│       └── templates/       # Admin templates
+│   └── admin/               # Admin blueprint (/admin, export/import)
+├── frontend/                # React SPA (Vite + React 18 + TypeScript)
+│   ├── src/
+│   │   ├── api/             # Typed API client
+│   │   ├── lib/             # Formatting (German numbers), chart defaults
+│   │   ├── components/      # Layout, cards, tables, dialogs
+│   │   └── pages/           # One component per route
+│   └── dist/                # Production build (served by Flask, not committed)
 ├── migrations/              # Alembic database migrations
 ├── tests/                   # Pytest test suite
 ├── config.py                # Configuration classes
 ├── run.py                   # Application entry point
-├── Dockerfile               # Docker image definition
+├── Dockerfile               # Multi-stage build (Node frontend + Python app)
 ├── docker-compose.*.yml     # Docker Compose configurations
 └── requirements.txt         # Python dependencies
 ```
 
 ## Tech Stack
 
-- **Backend:** Flask, SQLAlchemy, Flask-Login, Flask-WTF
+- **Backend:** Flask, SQLAlchemy, Flask-WTF
 - **Database:** SQLite (development), PostgreSQL (production)
-- **Frontend:** Jinja2 templates, Chart.js
-- **Deployment:** Docker, Gunicorn
+- **Frontend:** React 18, TypeScript, Vite, Chart.js (react-chartjs-2), React Router
+- **Testing:** pytest (backend), Vitest (frontend)
+- **Deployment:** Docker (multi-stage), Gunicorn
 
 ## License
 

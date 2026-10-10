@@ -5,12 +5,38 @@ from flask import render_template, Response, request, flash, redirect, url_for
 
 from . import admin_bp
 from ..extensions import db
-from ..models import Meter, MeterReading
+from ..models import Meter, MeterReading, Tariff, WeatherData
+from ..services.weather_import import WeatherImportError, import_weather_data
 
 
 @admin_bp.route('/')
 def index():
-    return render_template('admin/index.html')
+    weather_count = WeatherData.query.count()
+    latest = (WeatherData.query
+              .order_by(WeatherData.year_month.desc())
+              .first())
+    latest_month = None
+    if latest:
+        latest_month = f"{latest.year_month[4:]}/{latest.year_month[:4]}"
+    return render_template('admin/index.html',
+                           weather_count=weather_count,
+                           weather_latest_month=latest_month)
+
+
+@admin_bp.route('/import-weather', methods=['POST'])
+def import_weather():
+    try:
+        result = import_weather_data()
+    except WeatherImportError as e:
+        flash(f'Wetterdaten-Abruf fehlgeschlagen: {e}', 'danger')
+        return redirect(url_for('admin.index'))
+
+    flash(
+        f"Wetterdaten aktualisiert: {result['created']} neue Monate, "
+        f"{result['skipped']} bereits vorhanden.",
+        'success',
+    )
+    return redirect(url_for('admin.index'))
 
 
 @admin_bp.route('/export')
@@ -19,6 +45,7 @@ def export_data():
     readings = MeterReading.query.order_by(
         MeterReading.meter_id, MeterReading.reading_date
     ).all()
+    tariffs = Tariff.query.order_by(Tariff.meter_id, Tariff.valid_from).all()
 
     data = {
         'exported_at': datetime.utcnow().isoformat(),
@@ -28,6 +55,7 @@ def export_data():
                 'name': m.name,
                 'unit': m.unit,
                 'serial_number': m.serial_number,
+                'weather_overlay': m.weather_overlay,
             }
             for m in meters
         ],
@@ -38,6 +66,16 @@ def export_data():
                 'value': r.value,
             }
             for r in readings
+        ],
+        'tariffs': [
+            {
+                'meter_id': t.meter_id,
+                'name': t.name,
+                'price_per_unit': t.price_per_unit,
+                'base_price_monthly': t.base_price_monthly,
+                'valid_from': t.valid_from.isoformat(),
+            }
+            for t in tariffs
         ],
     }
 
@@ -83,6 +121,7 @@ def import_data():
                 name=meter_data['name'],
                 unit=meter_data['unit'],
                 serial_number=meter_data['serial_number'],
+                weather_overlay=meter_data.get('weather_overlay', False),
             )
             db.session.add(meter)
             db.session.flush()
@@ -122,10 +161,44 @@ def import_data():
 
     db.session.commit()
 
+    # Import tariffs (optional key, abwärtskompatibel zu alten Exporten)
+    tariffs_created = 0
+    tariffs_skipped = 0
+
+    for tariff_data in data.get('tariffs', []):
+        old_meter_id = tariff_data['meter_id']
+        if old_meter_id not in meter_id_map:
+            tariffs_skipped += 1
+            continue
+
+        new_meter_id = meter_id_map[old_meter_id]
+        valid_from = datetime.fromisoformat(tariff_data['valid_from']).date()
+
+        existing = Tariff.query.filter_by(
+            meter_id=new_meter_id,
+            valid_from=valid_from,
+        ).first()
+
+        if existing:
+            tariffs_skipped += 1
+        else:
+            tariff = Tariff(
+                meter_id=new_meter_id,
+                name=tariff_data.get('name'),
+                price_per_unit=tariff_data['price_per_unit'],
+                base_price_monthly=tariff_data.get('base_price_monthly', 0.0),
+                valid_from=valid_from,
+            )
+            db.session.add(tariff)
+            tariffs_created += 1
+
+    db.session.commit()
+
     flash(
         f'Import abgeschlossen: '
         f'Zähler: {meters_created} erstellt, {meters_skipped} übersprungen. '
-        f'Ablesungen: {readings_created} erstellt, {readings_skipped} übersprungen.',
+        f'Ablesungen: {readings_created} erstellt, {readings_skipped} übersprungen. '
+        f'Tarife: {tariffs_created} erstellt, {tariffs_skipped} übersprungen.',
         'success',
     )
     return redirect(url_for('admin.index'))

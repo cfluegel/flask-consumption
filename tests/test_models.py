@@ -250,6 +250,54 @@ class TestMeterModel:
             prev = meter.get_previous_reading(before_date=date.today())
             assert prev is None
 
+    def test_get_prediction_calculated_insufficient_readings(self, app, sample_meters):
+        """Test get_prediction_calculated returns None with fewer than 2 readings this month."""
+        with app.app_context():
+            meter = Meter.query.get(sample_meters['Strom'])
+            assert meter.get_prediction_calculated() is None
+
+            db.session.add(MeterReading(
+                meter_id=meter.id,
+                reading_date=date.today(),
+                value=1000.0
+            ))
+            db.session.commit()
+            assert meter.get_prediction_calculated() is None
+
+    def test_get_prediction_calculated_extrapolates_month(self, app, sample_meters):
+        """Test get_prediction_calculated extrapolates daily rate to the full month."""
+        from calendar import monthrange
+
+        with app.app_context():
+            today = date.today()
+            if today.day < 6:
+                pytest.skip('Zu früh im Monat für diesen Test')
+
+            meter = Meter.query.get(sample_meters['Strom'])
+            first = date(today.year, today.month, 1)
+            later = date(today.year, today.month, 6)
+            db.session.add(MeterReading(meter_id=meter.id, reading_date=first, value=1000.0))
+            db.session.add(MeterReading(meter_id=meter.id, reading_date=later, value=1050.0))
+            db.session.commit()
+
+            # 50 units over 5 days = 10/day, extrapolated to full month
+            _, days_in_month = monthrange(today.year, today.month)
+            prediction = meter.get_prediction_calculated()
+            assert prediction == pytest.approx(10.0 * days_in_month)
+
+    def test_get_prediction_calculated_ignores_other_months(self, app, sample_meters):
+        """Test get_prediction_calculated only uses readings from the current month."""
+        with app.app_context():
+            today = date.today()
+            meter = Meter.query.get(sample_meters['Strom'])
+            prev_month = (today - relativedelta(months=1)).replace(day=1)
+            db.session.add(MeterReading(meter_id=meter.id, reading_date=prev_month, value=900.0))
+            db.session.add(MeterReading(meter_id=meter.id, reading_date=today, value=1000.0))
+            db.session.commit()
+
+            # Only one reading falls into the current month
+            assert meter.get_prediction_calculated() is None
+
     def test_get_previous_reading_without_date(self, app, sample_readings):
         """Test get_previous_reading returns last reading when no date specified."""
         with app.app_context():

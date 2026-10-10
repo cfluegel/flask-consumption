@@ -1,292 +1,67 @@
-"""Tests for main blueprint web routes."""
+"""Tests for SPA serving (catch-all) and route precedence.
+
+The old Jinja web UI was replaced by the React SPA; its CRUD and
+statistics behavior is covered by tests/test_web_api.py.
+"""
+
+import os
 
 import pytest
-from datetime import date
-
-from app.extensions import db
-from app.models import Meter, MeterReading
 
 
-class TestIndexRoute:
-    """Tests for index page."""
+DIST_INDEX = os.path.join(
+    os.path.dirname(__file__), '..', 'frontend', 'dist', 'index.html'
+)
+frontend_built = os.path.isfile(DIST_INDEX)
 
-    def test_index_empty(self, client, app):
-        """Test index page with no meters."""
+
+class TestSpaServing:
+    def test_root_serves_spa_or_hint(self, client):
         response = client.get('/')
-        assert response.status_code == 200
-
-    def test_index_with_meters(self, client, sample_meters):
-        """Test index page displays meters."""
-        response = client.get('/')
-        assert response.status_code == 200
-        assert b'Strom' in response.data
-        assert b'Gas' in response.data
-        assert b'Wasser' in response.data
-
-    def test_index_with_readings(self, client, sample_readings):
-        """Test index page shows consumption data."""
-        response = client.get('/')
-        assert response.status_code == 200
-        # Should show meters with data
-        assert b'Strom' in response.data
-        assert b'kWh' in response.data
-
-
-class TestGraphsRoute:
-    """Tests for graphs page."""
-
-    def test_graphs_page(self, client, sample_meters):
-        """Test graphs page loads."""
-        response = client.get('/graphs')
-        assert response.status_code == 200
-
-    def test_graphs_with_data(self, client, sample_readings):
-        """Test graphs page with consumption data."""
-        response = client.get('/graphs')
-        assert response.status_code == 200
-        assert b'Strom' in response.data
-        assert b'chart-' in response.data
-
-
-class TestGraphDetailRoute:
-    """Tests for individual graph detail page."""
-
-    def test_graph_detail_page(self, client, sample_readings, app):
-        """Test graph detail page loads."""
-        with app.app_context():
-            meter = Meter.query.first()
-            response = client.get(f'/graph/{meter.id}')
+        if frontend_built:
             assert response.status_code == 200
-            assert meter.name.encode() in response.data
+            assert b'<div id="root">' in response.data
+        else:
+            assert response.status_code == 503
+            assert 'npm run build' in response.get_data(as_text=True)
 
-    def test_graph_detail_not_found(self, client, app):
-        """Test 404 for non-existent meter."""
-        response = client.get('/graph/99999')
-        assert response.status_code == 404
-
-
-class TestMeterDetailRoute:
-    """Tests for meter detail page."""
-
-    def test_meter_detail(self, client, sample_readings, app):
-        """Test meter detail page shows readings."""
-        with app.app_context():
-            meter = Meter.query.first()
-            response = client.get(f'/meter/{meter.id}')
+    @pytest.mark.skipif(not frontend_built, reason='frontend/dist fehlt')
+    def test_client_routes_serve_index_html(self, client):
+        """Client-side routes get index.html via the catch-all."""
+        for path in ('/kosten', '/tarife', '/vergleich', '/zaehler/1', '/einstellungen'):
+            response = client.get(path)
             assert response.status_code == 200
-            assert meter.name.encode() in response.data
+            assert b'<div id="root">' in response.data
 
-    def test_meter_detail_not_found(self, client, app):
-        """Test 404 for non-existent meter."""
-        response = client.get('/meter/99999')
-        assert response.status_code == 404
+    @pytest.mark.skipif(not frontend_built, reason='frontend/dist fehlt')
+    def test_static_assets_served_directly(self, client):
+        index = client.get('/').get_data(as_text=True)
+        # Vite injects hashed asset paths like /assets/index-abc123.js
+        assert '/assets/' in index
 
 
-class TestReadingCRUD:
-    """Tests for reading create, edit, delete."""
+class TestRoutePrecedence:
+    """The SPA catch-all must not swallow API, PWA or admin routes."""
 
-    def test_new_reading_get(self, client, sample_meters):
-        """Test new reading form displays."""
-        response = client.get('/reading/new')
+    def test_api_status_not_swallowed(self, client):
+        response = client.get('/api/status')
         assert response.status_code == 200
-        assert b'Strom' in response.data
-        assert b'Gas' in response.data
+        assert response.get_json() is not None
 
-    def test_new_reading_get_with_meter_id(self, client, sample_meters, app):
-        """Test new reading form pre-fills meter."""
-        with app.app_context():
-            meter = Meter.query.first()
-            response = client.get(f'/reading/new?meter_id={meter.id}')
-            assert response.status_code == 200
+    def test_api_v1_requires_key(self, client):
+        response = client.get('/api/v1/meters')
+        assert response.status_code == 401
 
-    def test_new_reading_post(self, client, sample_meters, app):
-        """Test creating a new reading."""
-        with app.app_context():
-            meter = Meter.query.first()
-            response = client.post('/reading/new', data={
-                'meter_id': meter.id,
-                'reading_date': date.today().isoformat(),
-                'value': '12345.67'
-            }, follow_redirects=True)
-
-            assert response.status_code == 200
-            # Should redirect to meter detail
-            assert b'erfolgreich gespeichert' in response.data or meter.name.encode() in response.data
-
-            # Verify reading was created
-            reading = MeterReading.query.filter_by(
-                meter_id=meter.id,
-                reading_date=date.today()
-            ).first()
-            assert reading is not None
-            assert reading.value == 12345.67
-
-    def test_edit_reading_get(self, client, sample_readings, app):
-        """Test edit reading form displays."""
-        with app.app_context():
-            reading = MeterReading.query.first()
-            response = client.get(f'/reading/{reading.id}/edit')
-            assert response.status_code == 200
-
-    def test_edit_reading_post(self, client, sample_readings, app):
-        """Test updating a reading."""
-        with app.app_context():
-            reading = MeterReading.query.first()
-            original_value = reading.value
-            new_value = original_value + 100
-
-            response = client.post(f'/reading/{reading.id}/edit', data={
-                'meter_id': reading.meter_id,
-                'reading_date': reading.reading_date.isoformat(),
-                'value': str(new_value)
-            }, follow_redirects=True)
-
-            assert response.status_code == 200
-
-            # Reload and verify
-            db.session.refresh(reading)
-            assert reading.value == new_value
-
-    def test_edit_reading_not_found(self, client, app):
-        """Test 404 for editing non-existent reading."""
-        response = client.get('/reading/99999/edit')
-        assert response.status_code == 404
-
-    def test_delete_reading(self, client, sample_readings, app):
-        """Test deleting a reading."""
-        with app.app_context():
-            reading = MeterReading.query.first()
-            reading_id = reading.id
-            meter_id = reading.meter_id
-
-            response = client.post(f'/reading/{reading_id}/delete', follow_redirects=True)
-
-            assert response.status_code == 200
-
-            # Verify reading was deleted
-            deleted = MeterReading.query.get(reading_id)
-            assert deleted is None
-
-    def test_delete_reading_not_found(self, client, app):
-        """Test 404 for deleting non-existent reading."""
-        response = client.post('/reading/99999/delete')
-        assert response.status_code == 404
-
-
-class TestAuthentication:
-    """Tests for login/logout."""
-
-    def test_login_page(self, client):
-        """Test login page displays."""
-        response = client.get('/login')
+    def test_ui_api_not_swallowed(self, client):
+        response = client.get('/ui-api/dashboard')
         assert response.status_code == 200
+        assert response.get_json() == {'meters': []}
 
-    def test_login_success(self, client, sample_user):
-        """Test successful login."""
-        response = client.post('/login', data={
-            'username': sample_user['username'],
-            'password': sample_user['password']
-        }, follow_redirects=True)
-
+    def test_admin_not_swallowed(self, client):
+        response = client.get('/admin/')
         assert response.status_code == 200
-        assert b'Erfolgreich angemeldet' in response.data or b'Strom' in response.data
+        assert b'Export' in response.data
 
-    def test_login_invalid_credentials(self, client, sample_user):
-        """Test login with wrong password."""
-        response = client.post('/login', data={
-            'username': sample_user['username'],
-            'password': 'wrongpassword'
-        }, follow_redirects=True)
-
+    def test_pwa_not_swallowed(self, client):
+        response = client.get('/pwa/')
         assert response.status_code == 200
-        assert b'Ung' in response.data  # "Ungültige Anmeldedaten"
-
-    def test_login_nonexistent_user(self, client):
-        """Test login with non-existent user."""
-        response = client.post('/login', data={
-            'username': 'nobody',
-            'password': 'somepassword'
-        }, follow_redirects=True)
-
-        assert response.status_code == 200
-        assert b'Ung' in response.data  # "Ungültige Anmeldedaten"
-
-    def test_logout(self, authenticated_client):
-        """Test logout."""
-        response = authenticated_client.get('/logout', follow_redirects=True)
-        assert response.status_code == 200
-        assert b'abgemeldet' in response.data
-
-    def test_already_authenticated_redirect(self, authenticated_client):
-        """Test that logged-in user is redirected from login page."""
-        response = authenticated_client.get('/login', follow_redirects=False)
-        assert response.status_code == 302
-        assert '/' in response.location
-
-
-class TestReadingFormPreviousReading:
-    """Tests for previous reading display in reading form."""
-
-    def test_new_reading_shows_previous(self, client, sample_readings, app):
-        """Test new reading form displays previous reading value."""
-        with app.app_context():
-            meter = Meter.query.filter_by(name='Strom').first()
-            response = client.get(f'/reading/new?meter_id={meter.id}')
-            assert response.status_code == 200
-            # Should display "Alter Zählerstand" label
-            assert 'Alter Z'.encode() in response.data
-            # Should NOT display "Keine vorherige Ablesung" since we have readings
-            assert 'Keine vorherige Ablesung'.encode() not in response.data
-
-    def test_new_reading_no_previous(self, client, sample_meters, app):
-        """Test new reading form shows 'Keine vorherige Ablesung' when no prior reading."""
-        with app.app_context():
-            meter = Meter.query.filter_by(name='Strom').first()
-            # Delete all readings for this meter
-            MeterReading.query.filter_by(meter_id=meter.id).delete()
-            db.session.commit()
-
-            response = client.get(f'/reading/new?meter_id={meter.id}')
-            assert response.status_code == 200
-            assert 'Keine vorherige Ablesung'.encode() in response.data
-
-    def test_edit_reading_shows_previous(self, client, sample_readings, app):
-        """Test edit reading form displays previous reading value."""
-        with app.app_context():
-            # Get a reading that has a previous reading
-            meter = Meter.query.filter_by(name='Strom').first()
-            readings = MeterReading.query.filter_by(meter_id=meter.id).order_by(MeterReading.reading_date.desc()).all()
-
-            if len(readings) > 1:
-                # Use the second reading (not the first) so there's a previous one
-                reading = readings[0]
-                response = client.get(f'/reading/{reading.id}/edit')
-                assert response.status_code == 200
-                # Should display "Alter Zählerstand" label
-                assert 'Alter Z'.encode() in response.data
-
-    def test_new_reading_without_meter_id(self, client, sample_meters, app):
-        """Test new reading form without meter_id doesn't show previous reading field."""
-        with app.app_context():
-            response = client.get('/reading/new')
-            assert response.status_code == 200
-            # Without meter_id, should not display the previous reading section
-            assert 'Keine vorherige Ablesung'.encode() not in response.data
-
-
-class TestDashboardYearlyConsumption:
-    """Tests for yearly consumption display on dashboard."""
-
-    def test_index_shows_yearly_consumption_column(self, client, sample_readings):
-        """Test dashboard displays Jahresverbrauch column."""
-        response = client.get('/')
-        assert response.status_code == 200
-        assert 'Jahresverbrauch'.encode() in response.data
-
-    def test_index_has_column_grouping(self, client, sample_readings):
-        """Test dashboard has visual column grouping classes."""
-        response = client.get('/')
-        assert response.status_code == 200
-        assert b'column-group-reading' in response.data
-        assert b'column-group-statistics' in response.data
-        assert b'column-group-prediction' in response.data

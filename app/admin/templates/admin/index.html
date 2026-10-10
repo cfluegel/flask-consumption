@@ -1,23 +1,100 @@
-{% extends "base.html" %}
-{% block content %}
-<h1>Admin</h1>
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Admin – Verbrauchstracker</title>
+  <style>
+    :root {
+      --sand-light: #f5e6c8;
+      --sand-medium: #e8d4a8;
+      --sand-dark: #d4a574;
+      --sand-accent: #b8860b;
+      --text-primary: #5c4033;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 16px;
+      background: var(--sand-light);
+      color: var(--text-primary);
+      margin: 0;
+      padding: 1rem;
+    }
+    main { max-width: 900px; margin: 0 auto; }
+    .cards { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-top: 1.5rem; }
+    .card {
+      flex: 1;
+      min-width: 280px;
+      border: 1px solid var(--sand-dark);
+      border-radius: 8px;
+      padding: 1.5rem;
+      background: var(--sand-medium);
+    }
+    .button, input[type="submit"] {
+      display: inline-block;
+      min-height: 44px;
+      padding: 0.65rem 1.25rem;
+      background: var(--sand-accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    input[type="file"] { display: block; margin-bottom: 0.75rem; font-size: 1rem; max-width: 100%; }
+    .flash { padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 0.75rem; }
+    .flash.success { background: #dcfce7; color: #166534; }
+    .flash.danger { background: #fee2e2; color: #7f1d1d; }
+    .back { display: inline-block; margin-bottom: 0.5rem; color: var(--sand-accent); }
+    .meta { font-size: 0.9rem; opacity: 0.8; }
+  </style>
+</head>
+<body>
+<main>
+  <a class="back" href="/">&larr; Zurück zur App</a>
+  <h1>Admin</h1>
 
-<div style="display: flex; gap: 2rem; flex-wrap: wrap; margin-top: 1.5rem;">
-  <div style="flex: 1; min-width: 280px; border: 1px solid var(--sand-dark); border-radius: 8px; padding: 1.5rem; background: var(--sand-medium);">
-    <h2>Export</h2>
-    <p>Alle Zähler und Ablesungen als JSON-Datei herunterladen.</p>
-    <a href="{{ url_for('admin.export_data') }}" class="button">Daten exportieren</a>
-  </div>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="flash {{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
 
-  <div style="flex: 1; min-width: 280px; border: 1px solid var(--sand-dark); border-radius: 8px; padding: 1.5rem; background: var(--sand-medium);">
-    <h2>Import</h2>
-    <p>Zähler und Ablesungen aus einer JSON-Datei importieren. Bereits vorhandene Einträge werden übersprungen.</p>
-    <form method="post" action="{{ url_for('admin.import_data') }}" enctype="multipart/form-data">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="file" name="file" accept=".json" style="margin-bottom: 0.75rem;">
-      <br>
-      <input type="submit" value="Daten importieren">
-    </form>
+  <div class="cards">
+    <div class="card">
+      <h2>Export</h2>
+      <p>Alle Zähler, Ablesungen und Tarife als JSON-Datei herunterladen.</p>
+      <a href="{{ url_for('admin.export_data') }}" class="button">Daten exportieren</a>
+    </div>
+
+    <div class="card">
+      <h2>Wetterdaten</h2>
+      <p>Monatliche Wetterdaten vom DWD (Hamburg-Fuhlsbüttel) abrufen. Bereits vorhandene Monate werden übersprungen.</p>
+      <p class="meta">
+        {% if weather_count %}
+          {{ weather_count }} Monate gespeichert, aktuellster: {{ weather_latest_month }}
+        {% else %}
+          Noch keine Wetterdaten gespeichert.
+        {% endif %}
+      </p>
+      <form method="post" action="{{ url_for('admin.import_weather') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="submit" value="Wetterdaten abrufen">
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Import</h2>
+      <p>Zähler, Ablesungen und Tarife aus einer JSON-Datei importieren. Bereits vorhandene Einträge werden übersprungen.</p>
+      <form method="post" action="{{ url_for('admin.import_data') }}" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="file" name="file" accept=".json">
+        <input type="submit" value="Daten importieren">
+      </form>
+    </div>
   </div>
-</div>
-{% endblock %}
+</main>
+</body>
+</html>

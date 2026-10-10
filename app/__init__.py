@@ -5,11 +5,11 @@ import click
 from flask import Flask
 from flasgger import Swagger
 from .extensions import db, migrate, login_manager, csrf
-from .main import main_bp
 from .api import api_bp
 from .api_v1 import api_v1_bp
 from .pwa import pwa_bp
 from .admin import admin_bp
+from .web_api import web_api_bp
 
 def create_app(config_object='config.Config'):
     app = Flask(__name__)
@@ -18,9 +18,6 @@ def create_app(config_object='config.Config'):
     # Extensions initialisieren
     db.init_app(app)
     migrate.init_app(app, db)
-    login_manager.init_app(app)
-    login_manager.login_view = 'main.login'
-    login_manager.login_message_category = 'info'
     csrf.init_app(app)
 
     # Load OpenAPI spec and configure Swagger UI
@@ -44,7 +41,6 @@ def create_app(config_object='config.Config'):
     Swagger(app, template=openapi_spec, config=swagger_config)
 
     # Blueprints registrieren
-    app.register_blueprint(main_bp)
     app.register_blueprint(api_bp, url_prefix='/api')
     csrf.exempt(api_bp)  # API uses API key auth instead of CSRF
     app.register_blueprint(api_v1_bp, url_prefix='/api/v1')
@@ -52,6 +48,12 @@ def create_app(config_object='config.Config'):
     app.register_blueprint(pwa_bp)
     csrf.exempt(pwa_bp)  # PWA uses API key auth
     app.register_blueprint(admin_bp, url_prefix='/admin')
+    app.register_blueprint(web_api_bp, url_prefix='/ui-api')
+    csrf.exempt(web_api_bp)  # Same-origin UI-API, gleiches Vertrauensniveau wie Web-UI
+
+    # React-SPA zuletzt registrieren, damit /api, /pwa, /admin etc. Vorrang haben.
+    from .spa import spa_bp
+    app.register_blueprint(spa_bp)
 
     # Custom Jinja2 filters
     @app.template_filter('de_number')
@@ -126,6 +128,23 @@ def register_commands(app):
         db.session.commit()
         click.echo(f"Seriennummer für '{meter.name}' aktualisiert: {old_serial} -> {serial}")
 
+    @app.cli.command('set-weather-overlay')
+    @click.option('--meter-id', required=True, type=int, help='ID des Zählers')
+    @click.option('--off', is_flag=True, help='Temperatur-Overlay deaktivieren')
+    def set_weather_overlay(meter_id, off):
+        """Aktiviert/deaktiviert das Temperatur-Overlay für einen Zähler."""
+        from .models import Meter
+
+        meter = Meter.query.get(meter_id)
+        if not meter:
+            click.echo(f"Fehler: Zähler mit ID {meter_id} nicht gefunden.")
+            return
+
+        meter.weather_overlay = not off
+        db.session.commit()
+        status = 'deaktiviert' if off else 'aktiviert'
+        click.echo(f"Temperatur-Overlay für '{meter.name}' {status}.")
+
     @app.cli.command('create-user')
     @click.option('--username', required=True, help='Benutzername')
     @click.option('--email', required=True, help='E-Mail-Adresse')
@@ -185,10 +204,11 @@ def register_commands(app):
         """Exportiert alle Zähler und Ablesungen in eine JSON-Datei."""
         import json
         from datetime import datetime
-        from .models import Meter, MeterReading
+        from .models import Meter, MeterReading, Tariff
 
         meters = Meter.query.all()
         readings = MeterReading.query.order_by(MeterReading.meter_id, MeterReading.reading_date).all()
+        tariffs = Tariff.query.order_by(Tariff.meter_id, Tariff.valid_from).all()
 
         data = {
             'exported_at': datetime.utcnow().isoformat(),
@@ -197,7 +217,8 @@ def register_commands(app):
                     'id': m.id,
                     'name': m.name,
                     'unit': m.unit,
-                    'serial_number': m.serial_number
+                    'serial_number': m.serial_number,
+                    'weather_overlay': m.weather_overlay
                 }
                 for m in meters
             ],
@@ -208,13 +229,23 @@ def register_commands(app):
                     'value': r.value
                 }
                 for r in readings
+            ],
+            'tariffs': [
+                {
+                    'meter_id': t.meter_id,
+                    'name': t.name,
+                    'price_per_unit': t.price_per_unit,
+                    'base_price_monthly': t.base_price_monthly,
+                    'valid_from': t.valid_from.isoformat()
+                }
+                for t in tariffs
             ]
         }
 
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-        click.echo(f"Exportiert: {len(meters)} Zähler, {len(readings)} Ablesungen")
+        click.echo(f"Exportiert: {len(meters)} Zähler, {len(readings)} Ablesungen, {len(tariffs)} Tarife")
         click.echo(f"Datei: {filename}")
 
     @app.cli.command('import-data')
@@ -224,7 +255,7 @@ def register_commands(app):
         """Importiert Zähler und Ablesungen aus einer JSON-Datei."""
         import json
         from datetime import datetime
-        from .models import Meter, MeterReading
+        from .models import Meter, MeterReading, Tariff
 
         with open(filename, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -237,13 +268,15 @@ def register_commands(app):
             # Confirm destructive operation
             reading_count = MeterReading.query.count()
             meter_count = Meter.query.count()
-            click.echo(f"WARNUNG: Dies löscht {meter_count} Zähler und {reading_count} Ablesungen!")
+            tariff_count = Tariff.query.count()
+            click.echo(f"WARNUNG: Dies löscht {meter_count} Zähler, {reading_count} Ablesungen und {tariff_count} Tarife!")
             if not click.confirm('Wirklich alle Daten ersetzen?'):
                 click.echo('Abgebrochen.')
                 return
 
-            # Delete all existing data (readings first due to foreign key)
+            # Delete all existing data (readings/tariffs first due to foreign key)
             MeterReading.query.delete()
+            Tariff.query.delete()
             Meter.query.delete()
             db.session.commit()
             click.echo('Bestehende Daten gelöscht.')
@@ -262,7 +295,8 @@ def register_commands(app):
                 meter = Meter(
                     name=meter_data['name'],
                     unit=meter_data['unit'],
-                    serial_number=meter_data['serial_number']
+                    serial_number=meter_data['serial_number'],
+                    weather_overlay=meter_data.get('weather_overlay', False)
                 )
                 db.session.add(meter)
                 db.session.flush()  # Get the new ID
@@ -304,205 +338,66 @@ def register_commands(app):
 
         db.session.commit()
 
+        # Import tariffs (optional key, abwärtskompatibel zu alten Exporten)
+        tariffs_created = 0
+        tariffs_skipped = 0
+
+        for tariff_data in data.get('tariffs', []):
+            old_meter_id = tariff_data['meter_id']
+            if old_meter_id not in meter_id_map:
+                click.echo(f"Warnung: Zähler-ID {old_meter_id} nicht gefunden, überspringe Tarif.")
+                tariffs_skipped += 1
+                continue
+
+            new_meter_id = meter_id_map[old_meter_id]
+            valid_from = datetime.fromisoformat(tariff_data['valid_from']).date()
+
+            existing = Tariff.query.filter_by(
+                meter_id=new_meter_id,
+                valid_from=valid_from
+            ).first()
+
+            if existing:
+                tariffs_skipped += 1
+            else:
+                tariff = Tariff(
+                    meter_id=new_meter_id,
+                    name=tariff_data.get('name'),
+                    price_per_unit=tariff_data['price_per_unit'],
+                    base_price_monthly=tariff_data.get('base_price_monthly', 0.0),
+                    valid_from=valid_from
+                )
+                db.session.add(tariff)
+                tariffs_created += 1
+
+        db.session.commit()
+
         click.echo(f"\nImport abgeschlossen:")
         click.echo(f"  Zähler:     {meters_created} erstellt, {meters_skipped} übersprungen")
         click.echo(f"  Ablesungen: {readings_created} erstellt, {readings_skipped} übersprungen")
+        click.echo(f"  Tarife:     {tariffs_created} erstellt, {tariffs_skipped} übersprungen")
 
     @app.cli.command('import-weather')
     @click.option('--url', default=None, help='Override default DWD URL')
     @click.option('--replace', is_flag=True, help='Replace all existing weather data')
     def import_weather(url, replace):
         """Importiert monatliche Wetterdaten vom DWD (Hamburg-Fuhlsbüttel)."""
-        import urllib.request
-        from .models import WeatherData
+        from .services.weather_import import DEFAULT_DWD_URL, WeatherImportError, import_weather_data
 
-        # Default URL for Hamburg-Fuhlsbüttel monthly data
-        default_url = 'https://www.dwd.de/DE/leistungen/_config/leistungsteckbriefPublication.txt?view=nasPublication&nn=16102&imageFilePath=8524108716561010473591414984380285860348440627905136707616031491601294722759953476578874542442119146105183517945099480938740343906988335742522410754862714750285564712567437754031667430876202844830680654990991014883769890983300283888580251123815305533&download=true'
-        data_url = url or default_url
-
-        click.echo(f'Downloading weather data from DWD...')
-        click.echo(f'URL: {data_url}')
+        click.echo('Downloading weather data from DWD...')
+        click.echo(f'URL: {url or DEFAULT_DWD_URL}')
 
         try:
-            # Download the file
-            if data_url.endswith('.zip'):
-                import zipfile
-                import io
-                import tempfile
-
-                with urllib.request.urlopen(data_url, timeout=60) as response:
-                    zip_data = response.read()
-
-                # Extract the data file from the zip
-                with zipfile.ZipFile(io.BytesIO(zip_data)) as zf:
-                    # Find the data file (starts with 'produkt_')
-                    data_file = None
-                    for name in zf.namelist():
-                        if name.startswith('produkt_') and name.endswith('.txt'):
-                            data_file = name
-                            break
-
-                    if not data_file:
-                        click.echo('Fehler: Keine Datendatei im ZIP gefunden.')
-                        return
-
-                    click.echo(f'Extrahiere: {data_file}')
-                    content = zf.read(data_file).decode('latin-1')
-            else:
-                with urllib.request.urlopen(data_url, timeout=60) as response:
-                    content = response.read().decode('latin-1')
-
-        except Exception as e:
-            click.echo(f'Fehler beim Download: {e}')
+            result = import_weather_data(url=url, replace=replace)
+        except WeatherImportError as e:
+            click.echo(f'Fehler: {e}')
             return
 
-        # Strip <pre> tags if present
-        content = content.strip()
-        if content.startswith('<pre>'):
-            content = content[5:]
-        if content.endswith('</pre>'):
-            content = content[:-6]
-        content = content.strip()
-
-        # Parse the content - fixed-width format from DWD
-        lines = content.strip().split('\n')
-        if not lines:
-            click.echo('Fehler: Keine Daten gefunden.')
-            return
-
-        # Find header and separator lines
-        header_idx = None
-        separator_idx = None
-        for i, line in enumerate(lines):
-            if 'STAT' in line and 'JJJJMM' in line:
-                header_idx = i
-            elif header_idx is not None and line.strip().startswith('-----'):
-                separator_idx = i
-                break
-
-        if header_idx is None or separator_idx is None:
-            click.echo('Fehler: Header oder Trennzeile nicht gefunden.')
-            return
-
-        # Parse column positions from separator line (-----  ------  etc.)
-        separator = lines[separator_idx]
-        header = lines[header_idx]
-
-        # Find column boundaries from dashes
-        col_positions = []
-        in_col = False
-        col_start = 0
-        for i, char in enumerate(separator):
-            if char == '-' and not in_col:
-                col_start = i
-                in_col = True
-            elif char != '-' and in_col:
-                col_positions.append((col_start, i))
-                in_col = False
-        if in_col:
-            col_positions.append((col_start, len(separator)))
-
-        # Extract column names from header using positions
-        columns = []
-        for start, end in col_positions:
-            col_name = header[start:end].strip()
-            columns.append(col_name)
-
-        click.echo(f'Gefundene Spalten: {columns}')
-
-        # DWD column mapping to our model fields
-        field_mapping = {
-            'STAT': 'station_id',
-            'JJJJMM': 'year_month',
-            'QN': 'quality_level',
-            'TNN': 'temp_min',
-            'TNM': 'temp_min_avg',
-            'TMM': 'temp_avg',
-            'TXM': 'temp_max_avg',
-            'TXX': 'temp_max',
-            'SOS': 'sunshine_hours',
-            'NMM': 'cloud_cover_avg',
-            'RSS': 'precipitation_sum',
-            'RSX': 'precipitation_max',
-            'FMM': 'wind_speed_avg',
-            'FXX': 'wind_gust_max',
-        }
-
-        # Map column names to positions
-        col_map = {name: (pos, columns[i]) for i, (name, pos) in enumerate(zip(columns, col_positions))}
-
-        if replace:
-            count = WeatherData.query.count()
-            if count > 0:
-                click.echo(f'Lösche {count} bestehende Wetterdaten-Einträge...')
-                WeatherData.query.delete()
-                db.session.commit()
-
-        records_created = 0
-        records_skipped = 0
-
-        # Process data lines (skip header and separator line)
-        for line in lines[separator_idx + 1:]:
-            if not line.strip() or line.strip().startswith('-'):
-                continue
-
-            # Extract values using fixed-width positions
-            values = {}
-            for col_name, (start, end) in zip(columns, col_positions):
-                if end <= len(line):
-                    val = line[start:end].strip()
-                elif start < len(line):
-                    val = line[start:].strip()
-                else:
-                    val = ''
-                values[col_name] = val
-
-            # Extract station_id and year_month
-            try:
-                station_id = int(values.get('STAT', ''))
-                year_month = values.get('JJJJMM', '')
-            except (ValueError, TypeError):
-                continue
-
-            if not year_month or len(year_month) != 6:
-                continue
-
-            # Check for existing record
-            existing = WeatherData.query.filter_by(
-                station_id=station_id,
-                year_month=year_month
-            ).first()
-
-            if existing:
-                records_skipped += 1
-                continue
-
-            # Build the record
-            weather = WeatherData(station_id=station_id, year_month=year_month)
-
-            # Map remaining fields
-            for dwd_col, model_field in field_mapping.items():
-                if dwd_col in ['STAT', 'JJJJMM']:
-                    continue  # Already handled
-
-                val = values.get(dwd_col, '').strip()
-                if val and val != '-999' and val != '-999.0':
-                    try:
-                        if model_field == 'quality_level':
-                            setattr(weather, model_field, int(val))
-                        else:
-                            setattr(weather, model_field, float(val))
-                    except ValueError:
-                        pass  # Leave as NULL
-
-            db.session.add(weather)
-            records_created += 1
-
-        db.session.commit()
-
+        if result['deleted']:
+            click.echo(f"Gelöscht (--replace): {result['deleted']}")
         click.echo(f'\nImport abgeschlossen:')
-        click.echo(f'  Neue Einträge: {records_created}')
-        click.echo(f'  Übersprungen (bereits vorhanden): {records_skipped}')
+        click.echo(f"  Neue Einträge: {result['created']}")
+        click.echo(f"  Übersprungen (bereits vorhanden): {result['skipped']}")
 
     @app.cli.command('show-weather')
     @click.option('--limit', default=12, help='Anzahl der Einträge (Standard: 12)')
